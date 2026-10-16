@@ -4,7 +4,7 @@ Tags: gallery, google-photos, oauth, shortcode, lightbox
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.2.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,13 @@ Añade el shortcode [apgallery album="ID_DEL_ALBUM"] en cualquier página o entr
 Sí, con el atributo columns (1-6): [apgallery album="ID" columns="4"]. En móvil el grid se ajusta automáticamente a 2 columnas.
 
 == Changelog ==
+
+= 0.2.0 =
+* Nueva página Medios → Google Photos: visualiza los álbumes conectados y sus fotos, e importa cualquier foto a la biblioteca de medios con un clic (evita duplicados).
+* Corregido: la lista de álbumes ahora usa query params en GET v1/albums (antes enviaba body en un GET).
+* Corregido: las cabeceras se fusionan correctamente al reintentar tras un 401.
+* Corregido: doble encoding eliminado en el redirect de error del callback OAuth.
+* Nuevo: avisos de éxito/error del callback OAuth visibles en el panel de ajustes.
 
 = 0.1.0 =
 * Primera versión: conexión OAuth 2.0 con Google Photos Library API, panel de ajustes, shortcode [apgallery] con grid responsive (1-6 columnas) y lightbox integrado.

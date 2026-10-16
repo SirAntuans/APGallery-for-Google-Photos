@@ -3,7 +3,7 @@
  * Plugin Name:       APGallery for Google Photos
  * Plugin URI:        https://apsoft.example.com/apgallery-google-photos
  * Description:       Muestra álbumes y fotos de Google Photos en la galería de tu sitio mediante el shortcode [apgallery]. Conexión segura vía OAuth 2.0.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.0
  * Requires PHP:       7.4
  * Author:             APSoft
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'APGALLERY_VERSION', '0.1.0' );
+define( 'APGALLERY_VERSION', '0.2.0' );
 define( 'APGALLERY_OPT_PREFIX', 'apgallery_' );
 
 /* -------------------------------------------------------------------------
@@ -65,7 +65,10 @@ function apgallery_remote_request( $endpoint, $args = array() ) {
 		'timeout' => 15,
 	);
 
-	$response = wp_remote_request( $url, wp_parse_args( $args, $defaults ) );
+	$args = wp_parse_args( $args, $defaults );
+	$args['headers'] = array_merge( $defaults['headers'], (array) ( $args['headers'] ?? array() ) );
+
+	$response = wp_remote_request( $url, $args );
 
 	if ( is_wp_error( $response ) ) {
 		return $response;
@@ -82,7 +85,7 @@ function apgallery_remote_request( $endpoint, $args = array() ) {
 			return $token;
 		}
 		$args['headers']['Authorization'] = 'Bearer ' . $token;
-		$response = wp_remote_request( $url, wp_parse_args( $args, $defaults ) );
+		$response = wp_remote_request( $url, $args );
 		$body     = json_decode( wp_remote_retrieve_body( $response ), true );
 	}
 
@@ -144,18 +147,18 @@ function apgallery_get_access_token() {
  *
  * @return array|WP_Error
  */
-function apgallery_get_albums() {
+function apgallery_get_albums( $page_token = '' ) {
+	$query = array(
+		'pageSize'                 => 50,
+		'excludeNonAppCreatedData' => 'false',
+	);
+	if ( '' !== $page_token ) {
+		$query['pageToken'] = $page_token;
+	}
+
 	return apgallery_remote_request(
-		'v1/albums',
-		array(
-			'method' => 'GET',
-			'body'   => wp_json_encode(
-				array(
-					'pageSize'                 => 50,
-					'excludeNonAppCreatedData' => false,
-				)
-			),
-		)
+		add_query_arg( $query, 'v1/albums' ),
+		array( 'method' => 'GET' )
 	);
 }
 
@@ -191,6 +194,7 @@ function apgallery_get_album_media( $album_id, $page_size = 24, $page_token = ''
  * ---------------------------------------------------------------------- */
 
 add_action( 'admin_menu', 'apgallery_add_settings_page' );
+add_action( 'admin_menu', 'apgallery_add_media_page' );
 function apgallery_add_settings_page() {
 	add_options_page(
 		__( 'APGallery for Google Photos', 'apgallery-google-photos' ),
@@ -222,6 +226,14 @@ function apgallery_render_settings_page() {
 	}
 
 	$connected = (bool) get_option( APGALLERY_OPT_PREFIX . 'refresh_token' );
+
+	// Avisos de redirección (OAuth o importaciones).
+	if ( isset( $_GET['apgallery_ok'] ) ) {
+		echo '<div class="notice notice-success"><p>' . esc_html__( 'Cuenta de Google conectada correctamente.', 'apgallery-google-photos' ) . '</p></div>';
+	}
+	if ( isset( $_GET['apgallery_error'] ) ) {
+		echo '<div class="notice notice-error"><p>' . esc_html( sanitize_text_field( wp_unslash( $_GET['apgallery_error'] ) ) ) . '</p></div>';
+	}
 
 	// Guardar credenciales.
 	if ( isset( $_POST['apgallery_save'] ) && check_admin_referer( 'apgallery_save_credentials' ) ) {
@@ -356,7 +368,7 @@ function apgallery_oauth_callback() {
 	}
 
 	$fail = static function ( $message ) {
-		wp_safe_redirect( add_query_arg( array( 'page' => 'apgallery-google-photos', 'apgallery_error' => rawurlencode( $message ) ), admin_url( 'options-general.php' ) ) );
+		wp_safe_redirect( add_query_arg( array( 'page' => 'apgallery-google-photos', 'apgallery_error' => $message ), admin_url( 'options-general.php' ) ) );
 		exit;
 	};
 
@@ -408,7 +420,259 @@ function apgallery_oauth_callback() {
 }
 
 /* -------------------------------------------------------------------------
- * 5. Shortcode [apgallery]
+ * 5. Página "Google Photos" en Medios: visualizar e importar
+ * ---------------------------------------------------------------------- */
+
+function apgallery_add_media_page() {
+	add_media_page(
+		__( 'Google Photos', 'apgallery-google-photos' ),
+		__( 'Google Photos', 'apgallery-google-photos' ),
+		'upload_files',
+		'apgallery-google-photos-media',
+		'apgallery_render_media_page'
+	);
+}
+
+add_action( 'admin_enqueue_scripts', 'apgallery_media_styles' );
+function apgallery_media_styles( $hook ) {
+	if ( 'media_page_apgallery-google-photos-media' !== $hook && 'album_page_apgallery-google-photos-media' !== $hook ) {
+		return;
+	}
+	echo '<style>
+		.apgallery-media-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; margin-top:1rem; }
+		.apgallery-media-item { position:relative; margin:0; border:1px solid #dcdcde; border-radius:8px; overflow:hidden; background:#fff; }
+		.apgallery-media-item img { width:100%; aspect-ratio:1/1; object-fit:cover; display:block; }
+		.apgallery-media-item .apgallery-import-form { position:absolute; inset:auto 0 0 0; padding:8px; background:rgba(255,255,255,.92); text-align:center; }
+		.apgallery-media-actions { margin:1rem 0; display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+		.apgallery-album-select { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem; }
+	</style>';
+}
+
+/**
+ * Renderiza la página Medios → Google Photos: selector de álbum, miniaturas
+ * y botón para importar cada foto a la biblioteca de medios.
+ */
+function apgallery_render_media_page() {
+	if ( ! current_user_can( 'upload_files' ) ) {
+		wp_die( esc_html__( 'No tienes permisos para acceder a esta página.', 'apgallery-google-photos' ) );
+	}
+
+	$connected = (bool) get_option( APGALLERY_OPT_PREFIX . 'refresh_token' );
+	if ( ! $connected ) {
+		echo '<div class="wrap"><h1>' . esc_html__( 'Google Photos', 'apgallery-google-photos' ) . '</h1>';
+		echo '<div class="notice notice-warning"><p>' . sprintf(
+			/* translators: %s: URL de la página de ajustes del plugin. */
+			esc_html__( 'Aún no hay ninguna cuenta de Google conectada. Configúrala en %s.', 'apgallery-google-photos' ),
+			'<a href="' . esc_url( admin_url( 'options-general.php?page=apgallery-google-photos' ) ) . '">' . esc_html__( 'Ajustes → APGallery Google Photos', 'apgallery-google-photos' ) . '</a>'
+		) . '</p></div></div>';
+		return;
+	}
+
+	// Importar una foto a la biblioteca de medios.
+	if ( isset( $_POST['apgallery_import'] ) && check_admin_referer( 'apgallery_import_photo' ) ) {
+		$result = apgallery_import_photo_to_media(
+			sanitize_text_field( wp_unslash( $_POST['apgallery_baseurl'] ?? '' ) ),
+			sanitize_text_field( wp_unslash( $_POST['apgallery_filename'] ?? '' ) ),
+			sanitize_text_field( wp_unslash( $_POST['apgallery_media_id'] ?? '' ) )
+		);
+		if ( is_wp_error( $result ) ) {
+			echo '<div class="notice notice-error"><p>' . esc_html( $result->get_error_message() ) . '</p></div>';
+		} else {
+			echo '<div class="notice notice-success"><p>' . sprintf(
+				/* translators: %s: nombre del archivo importado. */
+				esc_html__( 'Foto "%s" importada a la biblioteca de medios.', 'apgallery-google-photos' ),
+				esc_html( $result )
+			) . '</p></div>';
+		}
+	}
+
+	$album_id   = isset( $_GET['album'] ) ? sanitize_text_field( wp_unslash( $_GET['album'] ) ) : '';
+	$page_token = isset( $_GET['paged_token'] ) ? sanitize_text_field( wp_unslash( $_GET['paged_token'] ) ) : '';
+
+	echo '<div class="wrap"><h1>' . esc_html__( 'Google Photos', 'apgallery-google-photos' ) . '</h1>';
+
+	$albums = apgallery_get_albums();
+	if ( is_wp_error( $albums ) ) {
+		echo '<div class="notice notice-error"><p>' . esc_html( $albums->get_error_message() ) . '</p></div></div>';
+		return;
+	}
+
+	if ( empty( $albums['albums'] ) ) {
+		echo '<p><em>' . esc_html__( 'No se encontraron álbumes en la cuenta conectada.', 'apgallery-google-photos' ) . '</em></p></div>';
+		return;
+	}
+
+	$albums_by_id = array();
+	foreach ( $albums['albums'] as $album ) {
+		$albums_by_id[ $album['id'] ] = $album['title'] ?? __( 'Sin título', 'apgallery-google-photos' );
+	}
+
+	echo '<form method="get" class="apgallery-album-select">';
+	echo '<input type="hidden" name="page" value="apgallery-google-photos-media" />';
+	echo '<label for="apgallery_album"><strong>' . esc_html__( 'Álbum:', 'apgallery-google-photos' ) . '</strong></label> ';
+	echo '<select name="album" id="apgallery_album">';
+	foreach ( $albums_by_id as $id => $title ) {
+		printf(
+			'<option value="%s" %s>%s</option>',
+			esc_attr( $id ),
+			selected( $album_id, $id, false ),
+			esc_html( $title )
+		);
+	}
+	echo '</select> ';
+	submit_button( __( 'Ver fotos', 'apgallery-google-photos' ), 'secondary', '', false );
+	echo '</form>';
+
+	if ( '' === $album_id ) {
+		echo '<p><em>' . esc_html__( 'Elige un álbum para ver sus fotos e importarlas a tu biblioteca de medios.', 'apgallery-google-photos' ) . '</em></p></div>';
+		return;
+	}
+
+	$media = apgallery_get_album_media( $album_id, 24, $page_token );
+	if ( is_wp_error( $media ) ) {
+		echo '<div class="notice notice-error"><p>' . esc_html( $media->get_error_message() ) . '</p></div></div>';
+		return;
+	}
+
+	$album_title = $albums_by_id[ $album_id ] ?? '';
+	echo '<h2>' . sprintf(
+		/* translators: %s: título del álbum. */
+		esc_html__( 'Fotos del álbum "%s"', 'apgallery-google-photos' ),
+			esc_html( $album_title )
+	) . '</h2>';
+
+	if ( empty( $media['mediaItems'] ) ) {
+		echo '<p><em>' . esc_html__( 'Este álbum no tiene fotos.', 'apgallery-google-photos' ) . '</em></p></div>';
+		return;
+	}
+
+	echo '<div class="apgallery-media-grid">';
+	foreach ( $media['mediaItems'] as $item ) {
+		if ( 'PHOTO' !== ( $item['mimeType'] ?? '' ) ) {
+			continue;
+		}
+		$thumb     = $item['baseUrl'] . '=w300-h300-c';
+		$download  = $item['baseUrl'] . '=d';
+		$filename  = $item['filename'] ?? 'google-photo.jpg';
+		$media_id  = apgallery_find_imported_media_id( $item['id'] ?? '' );
+		?>
+		<figure class="apgallery-media-item">
+			<img src="<?php echo esc_url( $thumb ); ?>" alt="<?php echo esc_attr( $filename ); ?>" loading="lazy" />
+			<form method="post" class="apgallery-import-form">
+				<?php wp_nonce_field( 'apgallery_import_photo' ); ?>
+				<input type="hidden" name="apgallery_baseurl" value="<?php echo esc_attr( $download ); ?>" />
+				<input type="hidden" name="apgallery_filename" value="<?php echo esc_attr( $filename ); ?>" />
+				<input type="hidden" name="apgallery_media_id" value="<?php echo esc_attr( $item['id'] ?? '' ); ?>" />
+				<?php if ( $media_id ) : ?>
+					<a class="button button-small" href="<?php echo esc_url( get_edit_post_link( $media_id ) ); ?>"><?php esc_html_e( 'Ya en medios', 'apgallery-google-photos' ); ?></a>
+				<?php else : ?>
+					<button type="submit" class="button button-primary button-small" name="apgallery_import" value="1"><?php esc_html_e( 'Importar a medios', 'apgallery-google-photos' ); ?></button>
+				<?php endif; ?>
+			</form>
+		</figure>
+		<?php
+	}
+	echo '</div>';
+
+	if ( ! empty( $media['nextPageToken'] ) ) {
+		echo '<div class="apgallery-media-actions">';
+		printf(
+			'<a class="button button-secondary" href="%s">%s</a>',
+			esc_url( add_query_arg( array( 'page' => 'apgallery-google-photos-media', 'album' => $album_id, 'paged_token' => $media['nextPageToken'] ), admin_url( 'upload.php' ) ) ),
+			esc_html__( 'Cargar más fotos', 'apgallery-google-photos' )
+		);
+		echo '</div>';
+	}
+
+	echo '</div>';
+}
+
+/**
+ * Busca un adjunto ya importado por su ID de media item de Google Photos.
+ *
+ * @param string $google_media_id ID del media item de Google.
+ * @return int ID del adjunto o 0 si no existe.
+ */
+function apgallery_find_imported_media_id( $google_media_id ) {
+	if ( '' === $google_media_id ) {
+		return 0;
+	}
+	$existing = get_posts(
+		array(
+			'post_type'   => 'attachment',
+			'post_status' => 'inherit',
+			'meta_query'  => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+				array(
+					'key'   => APGALLERY_OPT_PREFIX . 'google_media_id',
+					'value' => $google_media_id,
+				),
+			),
+			'fields'      => 'ids',
+			'numberposts' => 1,
+		)
+	);
+	return ! empty( $existing ) ? (int) $existing[0] : 0;
+}
+
+/**
+ * Descarga una foto de Google Photos y la añade a la biblioteca de medios.
+ *
+ * @param string $baseurl        URL de descarga (baseUrl con '=d').
+ * @param string $filename       Nombre de archivo sugerido.
+ * @param string $google_media_id ID del media item de Google (para evitar duplicados).
+ * @return string|WP_Error Nombre del archivo importado.
+ */
+function apgallery_import_photo_to_media( $baseurl, $filename, $google_media_id = '' ) {
+	if ( '' === $baseurl || ! preg_match( '#^https://photoslibrary\.googleapis\.com/#', $baseurl ) ) {
+		return new WP_Error( 'apgallery_invalid_url', __( 'APGallery: URL de descarga no válida.', 'apgallery-google-photos' ) );
+	}
+
+	if ( '' === $filename ) {
+		$filename = 'google-photo.jpg';
+	}
+	$filename = sanitize_file_name( $filename );
+	if ( '' === $filename ) {
+		$filename = 'google-photo.jpg';
+	}
+
+	$ext       = strtolower( pathinfo( $filename, PATHINFO_EXTENSION ) );
+	$valid_ext = array( 'jpg', 'jpeg', 'png', 'gif', 'webp' );
+	if ( ! in_array( $ext, $valid_ext, true ) ) {
+		$filename .= '.jpg';
+	}
+
+	if ( ! function_exists( 'media_handle_sideload' ) ) {
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+	}
+
+	$tmp = download_url( $baseurl );
+	if ( is_wp_error( $tmp ) ) {
+		return $tmp;
+	}
+
+	$file_array = array(
+			'name'     => $filename,
+			'tmp_name' => $tmp,
+	);
+
+	$media_id = media_handle_sideload( $file_array, 0 );
+	if ( is_wp_error( $media_id ) ) {
+		@unlink( $tmp ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		return $media_id;
+	}
+
+	// Guardar el ID de Google para evitar duplicados y permitir trazabilidad.
+	if ( '' !== $google_media_id ) {
+		update_post_meta( $media_id, APGALLERY_OPT_PREFIX . 'google_media_id', $google_media_id );
+	}
+
+	return $filename;
+}
+
+/* -------------------------------------------------------------------------
+ * 6. Shortcode [apgallery]
  * ---------------------------------------------------------------------- */
 
 add_action( 'init', 'apgallery_register_shortcode' );
