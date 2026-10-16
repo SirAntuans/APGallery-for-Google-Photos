@@ -17,7 +17,7 @@ jobs:
       - name: Prepare plugin folder
         run: |
           mkdir -p build/apgallery-google-photos
-          cp apgallery-google-photos.php readme.txt build/apgallery-google-photos/
+          cp apgallery-google-photos.php uninstall.php readme.txt build/apgallery-google-photos/
 
       - name: Create ZIP
         run: |
