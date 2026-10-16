@@ -3,7 +3,7 @@
  * Plugin Name:       APGallery for Google Photos
  * Plugin URI:        https://apsoft.example.com/apgallery-google-photos
  * Description:       Muestra álbumes y fotos de Google Photos en la galería de tu sitio mediante el shortcode [apgallery]. Conexión segura vía OAuth 2.0.
- * Version:           0.2.0
+ * Version:           0.3.0
  * Requires at least: 6.0
  * Requires PHP:       7.4
  * Author:             APSoft
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'APGALLERY_VERSION', '0.2.0' );
+define( 'APGALLERY_VERSION', '0.3.0' );
 define( 'APGALLERY_OPT_PREFIX', 'apgallery_' );
 
 /* -------------------------------------------------------------------------
@@ -672,7 +672,347 @@ function apgallery_import_photo_to_media( $baseurl, $filename, $google_media_id 
 }
 
 /* -------------------------------------------------------------------------
- * 6. Shortcode [apgallery]
+ * 6. Pestaña "Google Photos" en el modal de la biblioteca de medios
+ * ---------------------------------------------------------------------- */
+
+/**
+ * AJAX: lista de álbumes para el modal de medios.
+ */
+add_action( 'wp_ajax_apgallery_modal_albums', 'apgallery_ajax_modal_albums' );
+function apgallery_ajax_modal_albums() {
+	if ( ! current_user_can( 'upload_files' ) ) {
+		wp_send_json_error( array( 'message' => __( 'Permisos insuficientes.', 'apgallery-google-photos' ) ), 403 );
+	}
+	$albums = apgallery_get_albums();
+	if ( is_wp_error( $albums ) ) {
+		wp_send_json_error( array( 'message' => $albums->get_error_message() ), 500 );
+	}
+	$out = array();
+	foreach ( ( $albums['albums'] ?? array() ) as $album ) {
+		$out[] = array(
+			'id'    => $album['id'],
+			'title' => $album['title'] ?? __( 'Sin título', 'apgallery-google-photos' ),
+		);
+	}
+	wp_send_json_success( array( 'albums' => $out ) );
+}
+
+/**
+ * AJAX: fotos de un álbum para el modal de medios.
+ */
+add_action( 'wp_ajax_apgallery_modal_media', 'apgallery_ajax_modal_media' );
+function apgallery_ajax_modal_media() {
+	if ( ! current_user_can( 'upload_files' ) ) {
+		wp_send_json_error( array( 'message' => __( 'Permisos insuficientes.', 'apgallery-google-photos' ) ), 403 );
+	}
+	$album_id   = isset( $_POST['album'] ) ? sanitize_text_field( wp_unslash( $_POST['album'] ) ) : '';
+	$page_token = isset( $_POST['paged_token'] ) ? sanitize_text_field( wp_unslash( $_POST['paged_token'] ) ) : '';
+	if ( '' === $album_id ) {
+		wp_send_json_error( array( 'message' => __( 'Falta el ID del álbum.', 'apgallery-google-photos' ) ), 400 );
+	}
+
+	$media = apgallery_get_album_media( $album_id, 24, $page_token );
+	if ( is_wp_error( $media ) ) {
+		wp_send_json_error( array( 'message' => $media->get_error_message() ), 500 );
+	}
+
+	$out = array();
+	foreach ( ( $media['mediaItems'] ?? array() ) as $item ) {
+		if ( 'PHOTO' !== ( $item['mimeType'] ?? '' ) ) {
+			continue;
+		}
+		$out[] = array(
+			'id'          => $item['id'],
+			'filename'    => $item['filename'] ?? '',
+			'thumb'       => $item['baseUrl'] . '=w300-h300-c',
+			'download'    => $item['baseUrl'] . '=d',
+			'imported_id' => apgallery_find_imported_media_id( $item['id'] ?? '' ),
+		);
+	}
+	wp_send_json_success(
+		array(
+			'items'      => $out,
+			'next_token' => $media['nextPageToken'] ?? '',
+		)
+	);
+}
+
+/**
+ * AJAX: importa (o reutiliza) una foto y devuelve el ID del adjunto.
+ */
+add_action( 'wp_ajax_apgallery_modal_import', 'apgallery_ajax_modal_import' );
+function apgallery_ajax_modal_import() {
+	if ( ! current_user_can( 'upload_files' ) || ! check_ajax_referer( 'apgallery_modal', false, false ) ) {
+		wp_send_json_error( array( 'message' => __( 'Sesión no válida. Recarga la página e inténtalo de nuevo.', 'apgallery-google-photos' ) ), 403 );
+	}
+	$baseurl       = isset( $_POST['baseurl'] ) ? sanitize_text_field( wp_unslash( $_POST['baseurl'] ) ) : '';
+	$filename      = isset( $_POST['filename'] ) ? sanitize_text_field( wp_unslash( $_POST['filename'] ) ) : '';
+	$media_item_id  = isset( $_POST['media_id'] ) ? sanitize_text_field( wp_unslash( $_POST['media_id'] ) ) : '';
+	if ( '' === $baseurl ) {
+		wp_send_json_error( array( 'message' => __( 'URL de descarga no válida.', 'apgallery-google-photos' ) ), 400 );
+	}
+
+	// Si ya fue importada antes, devolver el adjunto existente.
+	$existing = apgallery_find_imported_media_id( $media_item_id );
+	if ( $existing ) {
+		wp_send_json_success(
+			array(
+				'id'  => $existing,
+				'url' => wp_get_attachment_url( $existing ),
+			)
+		);
+	}
+
+	$result = apgallery_import_photo_to_media( $baseurl, $filename, $media_item_id );
+	if ( is_wp_error( $result ) ) {
+		wp_send_json_error( array( 'message' => $result->get_error_message() ), 500 );
+	}
+
+	$attachment_id = apgallery_find_imported_media_id( $media_item_id );
+	if ( ! $attachment_id ) {
+		wp_send_json_error( array( 'message' => __( 'No se pudo localizar el adjunto importado.', 'apgallery-google-photos' ) ), 500 );
+	}
+	wp_send_json_success(
+		array(
+			'id'  => $attachment_id,
+			'url' => wp_get_attachment_url( $attachment_id ),
+		)
+	);
+}
+
+/**
+ * Encola el script que añade la pestaña "Google Photos" al frame de wp.media.
+ */
+add_action( 'admin_enqueue_scripts', 'apgallery_enqueue_media_modal_script' );
+function apgallery_enqueue_media_modal_script( $hook ) {
+	if ( ! get_option( APGALLERY_OPT_PREFIX . 'refresh_token' ) ) {
+		return;
+	}
+	if ( ! in_array( $hook, array( 'post.php', 'post-new.php' ), true ) && false === strpos( $hook, 'apgallery' ) ) {
+		return;
+	}
+
+	wp_register_script( 'apgallery-media-modal', false, array( 'media-editor', 'media-views', 'jquery' ), APGALLERY_VERSION, true );
+	wp_enqueue_script( 'apgallery-media-modal' );
+	wp_add_inline_script(
+		'apgallery-media-modal',
+		'var APGALLERY_MODAL = ' . wp_json_encode(
+			array(
+				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+				'nonce'   => wp_create_nonce( 'apgallery_modal' ),
+				'i18n'    => array(
+					'title'         => __( 'Google Photos', 'apgallery-google-photos' ),
+					'selectAlbum'   => __( 'Elige un álbum…', 'apgallery-google-photos' ),
+					'loadMore'      => __( 'Cargar más fotos', 'apgallery-google-photos' ),
+					'importing'     => __( 'Importando…', 'apgallery-google-photos' ),
+					'import'        => __( 'Importar y usar', 'apgallery-google-photos' ),
+					'imported'      => __( 'Ya en medios', 'apgallery-google-photos' ),
+					'error'         => __( 'Error al comunicarse con Google Photos.', 'apgallery-google-photos' ),
+					'noPhotos'      => __( 'Este álbum no tiene fotos.', 'apgallery-google-photos' ),
+					'noAlbums'      => __( 'No se encontraron álbumes en la cuenta conectada.', 'apgallery-google-photos' ),
+					'noConnection'  => __( 'Aún no hay ninguna cuenta de Google conectada.', 'apgallery-google-photos' ),
+			)
+			)
+		)
+	);
+	wp_add_inline_script( 'apgallery-media-modal', apgallery_media_modal_js() );
+
+	echo '<style>
+		.apgallery-modal-content { padding:0 16px 16px; }
+		.apgallery-modal-toolbar { display:flex; gap:8px; align-items:center; margin:16px 0; flex-wrap:wrap; }
+		.apgallery-modal-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
+		.apgallery-modal-item { position:relative; margin:0; border:2px solid transparent; border-radius:4px; overflow:hidden; cursor:pointer; }
+		.apgallery-modal-item img { width:100%; aspect-ratio:1/1; object-fit:cover; display:block; }
+		.apgallery-modal-item.selected { border-color:#2271b1; }
+		.apgallery-modal-item .apgallery-badge { position:absolute; top:4px; left:4px; background:#2271b1; color:#fff; font-size:10px; padding:2px 6px; border-radius:3px; }
+		.apgallery-modal-empty { grid-column:1/-1; }
+	</style>';
+}
+
+/**
+ * JS del modal de medios: pestaña Google Photos en el router del frame.
+ *
+ * Al confirmar, importa la foto seleccionada (o reutiliza la ya importada)
+ * y la devuelve como selección estándar del frame.
+ *
+ * @return string
+ */
+function apgallery_media_modal_js() {
+	return "(function ($) {
+	var media = wp.media;
+	if (!media || !media.view || !media.view.MediaFrame || !media.view.MediaFrame.Post) return;
+
+	function api(action, data) {
+		return $.post(APGALLERY_MODAL.ajaxUrl, $.extend({ action: action, nonce: APGALLERY_MODAL.nonce }, data), null, 'json');
+	}
+
+	var GooglePhotosView = media.View.extend({
+		tagName:   'div',
+		className: 'apgallery-modal-content',
+		events: {
+			'change .apgallery-modal-album': 'onAlbumChange',
+			'click .apgallery-load-more':    'onLoadMore',
+			'click .apgallery-modal-item':   'onItemClick'
+		},
+		initialize: function () {
+			this.albums = [];
+			this.album = '';
+			this.nextToken = '';
+			this.selected = null;
+			this.frame = this.options.frame;
+			this.loadAlbums();
+		},
+		render: function () {
+			var options = this.albums.map(function (a) {
+				return '<option value="' + a.id + '">' + a.title + '</option>';
+			}).join('');
+			this.$el.html(
+				'<div class="apgallery-modal-toolbar">' +
+					'<label><strong>' + APGALLERY_MODAL.i18n.title + '</strong> ' +
+					'<select class="apgallery-modal-album"><option value="">' + APGALLERY_MODAL.i18n.selectAlbum + '</option>' + options + '</select></label>' +
+					'<button type="button" class="button apgallery-load-more" hidden>' + APGALLERY_MODAL.i18n.loadMore + '</button>' +
+				'</div>' +
+				'<div class="apgallery-modal-grid"></div>'
+			);
+			if (this.album) this.$('.apgallery-modal-album').val(this.album);
+			this.delegateEvents();
+			return this;
+		},
+		loadAlbums: function () {
+			var self = this;
+			api('apgallery_modal_albums', {}).done(function (res) {
+				if (res && res.success) self.albums = res.data.albums;
+				self.render();
+			});
+		},
+		onAlbumChange: function (e) {
+			this.album = $(e.target).val();
+			this.nextToken = '';
+			this.selected = null;
+			this.updateToolbar();
+			this.$('.apgallery-modal-grid').empty();
+			if (this.album) this.loadPhotos();
+		},
+		onLoadMore: function (e) {
+			e.preventDefault();
+			this.loadPhotos();
+		},
+		onItemClick: function (e) {
+			var $item = $(e.currentTarget);
+			this.$('.apgallery-modal-item').removeClass('selected');
+			$item.addClass('selected');
+			this.selected = $item.data();
+			this.updateToolbar();
+		},
+		loadPhotos: function () {
+			var self = this;
+			var $btn = this.$('.apgallery-load-more');
+			$btn.text(APGALLERY_MODAL.i18n.importing).prop('disabled', true);
+			api('apgallery_modal_media', { album: this.album, paged_token: this.nextToken }).done(function (res) {
+				if (!res || !res.success) { $btn.text(APGALLERY_MODAL.i18n.error).prop('disabled', false); return; }
+				self.nextToken = res.data.next_token;
+				var $grid = self.$('.apgallery-modal-grid');
+				$.each(res.data.items, function (i, item) {
+					var $el = $('<div class="apgallery-modal-item"></div>')
+						.append($('<img />').attr({ src: item.thumb, alt: item.filename, loading: 'lazy' }));
+					if (item.imported_id) $el.append($('<span class="apgallery-badge"></span>').text(APGALLERY_MODAL.i18n.imported));
+					$el.data(item);
+					$grid.append($el);
+				});
+				$btn.toggle(!!self.nextToken).text(APGALLERY_MODAL.i18n.loadMore).prop('disabled', false);
+				if (!res.data.items.length && !$grid.children().length) {
+					$grid.append($('<p class="apgallery-modal-empty"></p>').text(APGALLERY_MODAL.i18n.noPhotos));
+				}
+			});
+		},
+		updateToolbar: function () {
+			var toolbar = this.frame.toolbar.get();
+			if (toolbar && toolbar.get) {
+				var btn = toolbar.get('apgallery-insert');
+				if (btn) btn.model.set('disabled', !this.selected);
+			}
+		},
+		importSelected: function () {
+			var self = this;
+			if (!this.selected) return $.Deferred().reject();
+			if (this.selected.imported_id) {
+				return $.Deferred().resolve({ id: this.selected.imported_id });
+			}
+			return api('apgallery_modal_import', {
+				baseurl:  this.selected.download,
+				filename: this.selected.filename,
+				media_id: this.selected.id
+			});
+		}
+	});
+
+	var InsertToolbar = media.view.Toolbar.extend({
+		initialize: function () {
+			media.view.Toolbar.prototype.initialize.apply(this, arguments);
+			this.set('apgallery-insert', new media.view.Button({
+				text:     APGALLERY_MODAL.i18n.import,
+				style:    'primary',
+				disabled: true,
+				click:    function () {
+					var frame = this.controller, content = frame.content.get();
+					this.model.set('disabled', true).set('text', APGALLERY_MODAL.i18n.importing);
+					content.importSelected().done(function (res) {
+						if (!res || !res.success) return;
+						var attachment = media.model.Attachment.get(res.data.id);
+						attachment.fetch().done(function () {
+							var selection = frame.state().get('selection');
+							selection.add(attachment);
+							frame.close();
+							frame.trigger('select');
+						});
+					});
+				}
+			}));
+		}
+	});
+
+	var GooglePhotosState = media.controller.Library.extend({
+		defaults: _.defaults({
+			id:       'apgallery-google-photos',
+			title:    APGALLERY_MODAL.i18n.title,
+			multiple: false,
+			content:  'apgallery-browse',
+			toolbar:  'apgallery-toolbar',
+			menu:     'default'
+		}, media.controller.Library.prototype.defaults),
+		activate: function () {},
+		deactivate: function () {}
+	});
+
+	var OriginalPost = media.view.MediaFrame.Post;
+	media.view.MediaFrame.Post = OriginalPost.extend({
+		initialize: function () {
+			OriginalPost.prototype.initialize.apply(this, arguments);
+			this.states.add([new GooglePhotosState()]);
+			this.on('content:render:apgallery-browse', this.apgalleryRenderContent, this);
+			this.on('toolbar:create:apgallery-toolbar', this.apgalleryCreateToolbar, this);
+		},
+		apgalleryRenderContent: function () {
+			this.content.set(new GooglePhotosView({ frame: this }));
+		},
+		apgalleryCreateToolbar: function (toolbar) {
+			toolbar.view = new InsertToolbar({ controller: this });
+		},
+		browseRouter: function (view) {
+			OriginalPost.prototype.browseRouter.apply(this, arguments);
+			view.set({
+				'apgallery-google-photos': {
+					text:     APGALLERY_MODAL.i18n.title,
+					priority: 60
+				}
+			});
+		}
+	});
+})(jQuery);";
+}
+
+/* -------------------------------------------------------------------------
+ * 7. Shortcode [apgallery]
  * ---------------------------------------------------------------------- */
 
 add_action( 'init', 'apgallery_register_shortcode' );
