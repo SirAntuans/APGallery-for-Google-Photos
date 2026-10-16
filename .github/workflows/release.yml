@@ -1,0 +1,30 @@
+name: Release ZIP
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare plugin folder
+        run: |
+          mkdir -p build/apgallery-google-photos
+          cp apgallery-google-photos.php readme.txt build/apgallery-google-photos/
+
+      - name: Create ZIP
+        run: |
+          cd build
+          zip -r "../apgallery-google-photos-${GITHUB_REF_NAME#v}.zip" apgallery-google-photos
+
+      - name: Upload ZIP to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apgallery-google-photos-*.zip
