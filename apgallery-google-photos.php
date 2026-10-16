@@ -3,7 +3,7 @@
  * Plugin Name:       APGallery for Google Photos
  * Plugin URI:        https://apsoft.example.com/apgallery-google-photos
  * Description:       Muestra álbumes y fotos de Google Photos en la galería de tu sitio mediante el shortcode [apgallery]. Conexión segura vía OAuth 2.0.
- * Version:           0.4.0
+ * Version:           0.5.0
  * Requires at least: 6.0
  * Requires PHP:       7.4
  * Author:             APSoft
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'APGALLERY_VERSION', '0.4.0' );
+define( 'APGALLERY_VERSION', '0.5.0' );
 define( 'APGALLERY_OPT_PREFIX', 'apgallery_' );
 define( 'APGALLERY_CACHE_TTL', 5 * MINUTE_IN_SECONDS );
 
@@ -40,8 +40,64 @@ function apgallery_activate() {
 }
 
 /* -------------------------------------------------------------------------
- * 2. Llamadas a la API de Google Photos
+ * 2. Cifrado del refresh token y llamadas a la API de Google Photos
  * ---------------------------------------------------------------------- */
+
+/**
+ * Cifra un secreto con AES-256-CBC + HMAC (encrypt-then-MAC), derivando la
+ * clave de wp_salt(). Devuelve el texto sin cifrar si OpenSSL no existe.
+ *
+ * @param string $plaintext Secreto en claro.
+ * @return string Secreto cifrado con prefijo "apg1:" o el original.
+ */
+function apgallery_encrypt( $plaintext ) {
+	if ( '' === $plaintext || ! function_exists( 'openssl_encrypt' ) ) {
+		return $plaintext;
+	}
+	$key = hash( 'sha256', wp_salt( 'auth' ), true );
+	$iv  = random_bytes( 16 );
+	$ct  = openssl_encrypt( $plaintext, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv );
+	if ( false === $ct ) {
+		return $plaintext;
+	}
+	$mac = hash_hmac( 'sha256', $iv . $ct, $key, true );
+	return 'apg1:' . base64_encode( $iv . $mac . $ct ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+}
+
+/**
+ * Descifra un secreto generado por apgallery_encrypt(). Los valores en claro
+ * (instalaciones previas a 0.5.0) se devuelven tal cual para migración suave.
+ *
+ * @param string $ciphertext Valor almacenado.
+ * @return string Secreto en claro o cadena vacía si el MAC no coincide.
+ */
+function apgallery_decrypt( $ciphertext ) {
+	if ( '' === $ciphertext || 0 !== strpos( $ciphertext, 'apg1:' ) ) {
+		return $ciphertext;
+	}
+	$raw = base64_decode( substr( $ciphertext, 5 ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
+	if ( false === $raw || strlen( $raw ) < 48 ) {
+		return '';
+	}
+	$key = hash( 'sha256', wp_salt( 'auth' ), true );
+	$iv  = substr( $raw, 0, 16 );
+	$mac = substr( $raw, 16, 32 );
+	$ct  = substr( $raw, 48 );
+	if ( ! hash_equals( hash_hmac( 'sha256', $iv . $ct, $key, true ), $mac ) ) {
+		return '';
+	}
+	$pt = openssl_decrypt( $ct, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv );
+	return false === $pt ? '' : $pt;
+}
+
+/**
+ * Devuelve el refresh token en claro (descifrándolo si es necesario).
+ *
+ * @return string
+ */
+function apgallery_get_refresh_token() {
+	return apgallery_decrypt( (string) get_option( APGALLERY_OPT_PREFIX . 'refresh_token' ) );
+}
 
 /**
  * Realiza una petición HTTP a la API de Google Photos con el access token.
@@ -109,8 +165,8 @@ function apgallery_get_access_token() {
 		return $cached;
 	}
 
-	$refresh_token = get_option( APGALLERY_OPT_PREFIX . 'refresh_token' );
-	if ( empty( $refresh_token ) ) {
+	$refresh_token = apgallery_get_refresh_token();
+	if ( '' === $refresh_token ) {
 		return new WP_Error( 'apgallery_not_connected', __( 'APGallery: no hay ninguna cuenta de Google conectada.', 'apgallery-google-photos' ) );
 	}
 
@@ -462,7 +518,7 @@ function apgallery_oauth_callback() {
 		$fail( __( 'Google no devolvió el refresh token. Revoca el acceso en tu cuenta de Google y conéctate de nuevo.', 'apgallery-google-photos' ) );
 	}
 
-	update_option( APGALLERY_OPT_PREFIX . 'refresh_token', $body['refresh_token'] );
+	update_option( APGALLERY_OPT_PREFIX . 'refresh_token', apgallery_encrypt( $body['refresh_token'] ) );
 	set_transient( APGALLERY_OPT_PREFIX . 'access_token', $body['access_token'], max( 60, (int) $body['expires_in'] - 60 ) );
 	apgallery_flush_media_cache();
 
@@ -1100,13 +1156,34 @@ function apgallery_render_shortcode( $atts ) {
 	wp_add_inline_style( 'apgallery', apgallery_public_css() );
 	wp_register_script( 'apgallery', false, array(), APGALLERY_VERSION, true );
 	wp_enqueue_script( 'apgallery' );
+	wp_add_inline_script(
+		'apgallery',
+		'var APGALLERY_FRONT = ' . wp_json_encode(
+			array(
+				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+				'nonce'   => wp_create_nonce( 'apgallery_front' ),
+				'i18n'    => array(
+					'loadMore'   => __( 'Cargar más fotos', 'apgallery-google-photos' ),
+					'loading'    => __( 'Cargando…', 'apgallery-google-photos' ),
+					'noMore'     => __( 'No hay más fotos en este álbum.', 'apgallery-google-photos' ),
+					'error'      => __( 'Error al cargar más fotos.', 'apgallery-google-photos' ),
+				),
+			)
+		)
+	);
 	wp_add_inline_script( 'apgallery', apgallery_public_js() );
 
-	$columns = min( 6, max( 1, (int) $atts['columns'] ) );
+	$columns    = min( 6, max( 1, (int) $atts['columns'] ) );
+	$next_token = $media['nextPageToken'] ?? '';
+	$has_more   = ! empty( $next_token );
 
 	ob_start();
 	?>
-	<div class="apgallery-wrapper">
+	<div class="apgallery-wrapper"
+		data-album="<?php echo esc_attr( $album_id ); ?>"
+		data-pagesize="<?php echo esc_attr( (int) $atts['pagesize'] ); ?>"
+		data-columns="<?php echo esc_attr( $columns ); ?>"
+		data-token="<?php echo esc_attr( $next_token ); ?>">
 		<div class="apgallery-grid apgallery-cols-<?php echo esc_attr( $columns ); ?>">
 			<?php
 			if ( ! empty( $media['mediaItems'] ) ) {
@@ -1130,6 +1207,11 @@ function apgallery_render_shortcode( $atts ) {
 			}
 			?>
 		</div>
+		<?php if ( $has_more ) : ?>
+			<div class="apgallery-load-more-wrap">
+				<button type="button" class="apgallery-load-more"><?php esc_html_e( 'Cargar más fotos', 'apgallery-google-photos' ); ?></button>
+			</div>
+		<?php endif; ?>
 		<div class="apgallery-lightbox-overlay" hidden aria-hidden="true">
 			<img src="" alt="" />
 			<button type="button" class="apgallery-lightbox-close" aria-label="<?php esc_attr_e( 'Cerrar', 'apgallery-google-photos' ); ?>">&times;</button>
@@ -1137,6 +1219,67 @@ function apgallery_render_shortcode( $atts ) {
 	</div>
 	<?php
 	return ob_get_clean();
+}
+
+/**
+ * AJAX público (con y sin sesión): siguientes fotos de un álbum para el botón
+ * "Cargar más" de la galería frontal. La caché protege la cuota de la API.
+ */
+add_action( 'wp_ajax_apgallery_front_media', 'apgallery_ajax_front_media' );
+add_action( 'wp_ajax_nopriv_apgallery_front_media', 'apgallery_ajax_front_media' );
+function apgallery_ajax_front_media() {
+	if ( ! check_ajax_referer( 'apgallery_front', false, false ) ) {
+		wp_send_json_error( array( 'message' => __( 'Sesión no válida. Recarga la página.', 'apgallery-google-photos' ) ), 403 );
+	}
+
+	$album_id   = isset( $_POST['album'] ) ? sanitize_text_field( wp_unslash( $_POST['album'] ) ) : '';
+	$pagesize   = isset( $_POST['pagesize'] ) ? min( 100, max( 1, (int) $_POST['pagesize'] ) ) : 24;
+	$columns    = isset( $_POST['columns'] ) ? min( 6, max( 1, (int) $_POST['columns'] ) ) : 3;
+	$page_token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+
+	if ( '' === $album_id || '' === $page_token ) {
+		wp_send_json_error( array( 'message' => __( 'Parámetros no válidos.', 'apgallery-google-photos' ) ), 400 );
+	}
+
+	$cache_key = APGALLERY_OPT_PREFIX . 'media_' . md5( $album_id . '|' . $pagesize . '|' . $page_token );
+	$cached    = get_transient( $cache_key );
+
+	if ( is_array( $cached ) ) {
+		$media = $cached;
+	} else {
+		$media = apgallery_get_album_media( $album_id, $pagesize, $page_token );
+		if ( is_wp_error( $media ) ) {
+			wp_send_json_error( array( 'message' => $media->get_error_message() ), 500 );
+		}
+		set_transient( $cache_key, $media, APGALLERY_CACHE_TTL );
+	}
+
+	$out = '';
+	foreach ( ( $media['mediaItems'] ?? array() ) as $item ) {
+		if ( 'PHOTO' !== ( $item['mimeType'] ?? '' ) ) {
+			continue;
+		}
+		$thumb = $item['baseUrl'] . '=w400-h400-c';
+		$full  = $item['baseUrl'] . '=w1600';
+		$alt   = $item['filename'] ?? '';
+		ob_start();
+		?>
+		<figure class="apgallery-item">
+			<a href="<?php echo esc_url( $full ); ?>" class="apgallery-lightbox" data-alt="<?php echo esc_attr( $alt ); ?>">
+				<img src="<?php echo esc_url( $thumb ); ?>" alt="<?php echo esc_attr( $alt ); ?>" loading="lazy" />
+			</a>
+		</figure>
+		<?php
+		$out .= ob_get_clean();
+	}
+
+	wp_send_json_success(
+		array(
+			'html'      => $out,
+			'nextToken' => $media['nextPageToken'] ?? '',
+			'columns'   => $columns,
+		)
+	);
 }
 
 function apgallery_public_css() {
@@ -1154,6 +1297,10 @@ function apgallery_public_css() {
 .apgallery-item img { width:100%; height:100%; object-fit:cover; aspect-ratio:1/1; transition:transform .25s ease; }
 .apgallery-item a:hover img { transform:scale(1.04); }
 .apgallery-lightbox-overlay { position:fixed; inset:0; background:rgba(0,0,0,.9); display:flex; align-items:center; justify-content:center; z-index:99999; }
+.apgallery-load-more-wrap { text-align:center; margin:1rem 0 1.5rem; }
+.apgallery-load-more { padding:.55rem 1.3rem; border:1px solid #dcdcde; border-radius:8px; background:#fff; cursor:pointer; font-size:.95rem; }
+.apgallery-load-more:hover { background:#f6f7f7; }
+.apgallery-load-more[disabled] { opacity:.6; cursor:default; }
 .apgallery-lightbox-overlay img { max-width:92vw; max-height:88vh; border-radius:4px; }
 .apgallery-lightbox-close { position:absolute; top:16px; right:20px; background:none; border:0; color:#fff; font-size:42px; line-height:1; cursor:pointer; }
 	';
@@ -1188,6 +1335,52 @@ function apgallery_public_js() {
 		if (e.key !== "Escape") return;
 		var ov = document.querySelector(".apgallery-lightbox-overlay:not([hidden])");
 		if (ov) { ov.hidden = true; ov.setAttribute("aria-hidden", "true"); }
+	});
+
+	// Botón "Cargar más fotos": pide la siguiente página vía AJAX.
+	document.addEventListener("click", function (e) {
+		var btn = e.target.closest(".apgallery-load-more");
+		if (!btn) return;
+		var wrap = btn.closest(".apgallery-wrapper");
+		if (!wrap) return;
+		var i18n = (window.APGALLERY_FRONT && window.APGALLERY_FRONT.i18n) ? window.APGALLERY_FRONT.i18n : {};
+		btn.disabled = true;
+		btn.textContent = i18n.loading || "Cargando…";
+		var data = {
+			action: "apgallery_front_media",
+			nonce: (window.APGALLERY_FRONT && window.APGALLERY_FRONT.nonce) ? window.APGALLERY_FRONT.nonce : "",
+			album: wrap.dataset.album || "",
+			pagesize: wrap.dataset.pagesize || 24,
+			columns: wrap.dataset.columns || 3,
+			token: wrap.dataset.token || ""
+		};
+		var xhr = new XMLHttpRequest();
+		xhr.open("POST", (window.APGALLERY_FRONT && window.APGALLERY_FRONT.ajaxUrl) ? window.APGALLERY_FRONT.ajaxUrl : "/wp-admin/admin-ajax.php");
+		xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+		xhr.onload = function () {
+			var res = {};
+			try { res = JSON.parse(xhr.responseText); } catch (err) {}
+			if (xhr.status === 200 && res.success) {
+				var grid = wrap.querySelector(".apgallery-grid");
+				if (grid && res.data.html) grid.insertAdjacentHTML("beforeend", res.data.html);
+				if (res.data.nextToken) {
+					wrap.dataset.token = res.data.nextToken;
+					btn.disabled = false;
+					btn.textContent = i18n.loadMore || "Cargar más fotos";
+				} else {
+					wrap.dataset.token = "";
+					btn.textContent = i18n.noMore || "No hay más fotos en este álbum.";
+				}
+			} else {
+				btn.disabled = false;
+				btn.textContent = (res.data && res.data.message) ? res.data.message : (i18n.error || "Error al cargar más fotos.");
+			}
+		};
+		xhr.onerror = function () {
+			btn.disabled = false;
+			btn.textContent = i18n.error || "Error al cargar más fotos.";
+		};
+		xhr.send(new URLSearchParams(data).toString());
 	});
 })();
 	';
