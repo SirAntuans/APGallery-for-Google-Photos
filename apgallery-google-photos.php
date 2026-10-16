@@ -3,7 +3,7 @@
  * Plugin Name:       APGallery for Google Photos
  * Plugin URI:        https://apsoft.example.com/apgallery-google-photos
  * Description:       Muestra álbumes y fotos de Google Photos en la galería de tu sitio mediante el shortcode [apgallery]. Conexión segura vía OAuth 2.0.
- * Version:           0.3.0
+ * Version:           0.4.0
  * Requires at least: 6.0
  * Requires PHP:       7.4
  * Author:             APSoft
@@ -17,8 +17,9 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'APGALLERY_VERSION', '0.3.0' );
+define( 'APGALLERY_VERSION', '0.4.0' );
 define( 'APGALLERY_OPT_PREFIX', 'apgallery_' );
+define( 'APGALLERY_CACHE_TTL', 5 * MINUTE_IN_SECONDS );
 
 /* -------------------------------------------------------------------------
  * 1. Activación / desactivación
@@ -143,6 +144,54 @@ function apgallery_get_access_token() {
 }
 
 /**
+ * Devuelve las fotos de un álbum desde la caché (TTL corto) o desde la API.
+ *
+ * Las baseUrl de Google Photos expiran en ~1 h, así que se cachea únicamente
+ * la respuesta de la API durante un TTL corto para proteger la cuota.
+ *
+ * @param string $album_id  ID del álbum.
+ * @param int    $page_size Fotos por página.
+ * @param bool   $use_cache True para usar caché.
+ * @return array|WP_Error
+ */
+function apgallery_get_cached_album_media( $album_id, $page_size, $use_cache = true ) {
+	$cache_key = APGALLERY_OPT_PREFIX . 'media_' . md5( $album_id . '|' . (int) $page_size );
+
+	if ( $use_cache ) {
+		$cached = get_transient( $cache_key );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+	}
+
+	$media = apgallery_get_album_media( $album_id, $page_size );
+	if ( is_wp_error( $media ) ) {
+		return $media;
+	}
+
+	if ( $use_cache ) {
+		set_transient( $cache_key, $media, APGALLERY_CACHE_TTL );
+	}
+
+	return $media;
+}
+
+/**
+ * Borra todos los transientes de caché de media del plugin.
+ */
+function apgallery_flush_media_cache() {
+	global $wpdb;
+	$prefix = $wpdb->esc_like( '_transient_apgallery_media_' );
+	$wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$wpdb->prepare(
+			"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+			$prefix . '%',
+			$wpdb->esc_like( '_transient_timeout_apgallery_media_' ) . '%'
+		)
+	);
+}
+
+/**
  * Obtiene la lista de álbumes del usuario.
  *
  * @return array|WP_Error
@@ -246,6 +295,7 @@ function apgallery_render_settings_page() {
 	if ( isset( $_POST['apgallery_disconnect'] ) && check_admin_referer( 'apgallery_disconnect' ) ) {
 		delete_option( APGALLERY_OPT_PREFIX . 'refresh_token' );
 		delete_transient( APGALLERY_OPT_PREFIX . 'access_token' );
+		apgallery_flush_media_cache();
 		echo '<div class="notice notice-warning"><p>' . esc_html__( 'Cuenta de Google desconectada.', 'apgallery-google-photos' ) . '</p></div>';
 		$connected = false;
 	}
@@ -414,6 +464,7 @@ function apgallery_oauth_callback() {
 
 	update_option( APGALLERY_OPT_PREFIX . 'refresh_token', $body['refresh_token'] );
 	set_transient( APGALLERY_OPT_PREFIX . 'access_token', $body['access_token'], max( 60, (int) $body['expires_in'] - 60 ) );
+	apgallery_flush_media_cache();
 
 	wp_safe_redirect( add_query_arg( array( 'page' => 'apgallery-google-photos', 'apgallery_ok' => '1' ), admin_url( 'options-general.php' ) ) );
 	exit;
@@ -1026,6 +1077,7 @@ function apgallery_render_shortcode( $atts ) {
 			'album'   => '', // ID del álbum de Google Photos.
 			'columns' => 3,  // Columnas del grid (1-6).
 			'pagesize' => 24, // Fotos por carga (máx. 100).
+			'cache'   => 1,  // 1 = usar caché (5 min), 0 = desactivada.
 		),
 		$atts,
 		'apgallery'
@@ -1036,18 +1088,19 @@ function apgallery_render_shortcode( $atts ) {
 		return '<p>' . esc_html__( 'APGallery: falta el atributo album en el shortcode.', 'apgallery-google-photos' ) . '</p>';
 	}
 
+	$use_cache = '0' !== (string) $atts['cache'];
+	$media     = apgallery_get_cached_album_media( $album_id, (int) $atts['pagesize'], $use_cache );
+
+	if ( is_wp_error( $media ) ) {
+		return '<p>' . esc_html( $media->get_error_message() ) . '</p>';
+	}
+
 	wp_register_style( 'apgallery', false, array(), APGALLERY_VERSION, 'all' );
 	wp_enqueue_style( 'apgallery' );
 	wp_add_inline_style( 'apgallery', apgallery_public_css() );
 	wp_register_script( 'apgallery', false, array(), APGALLERY_VERSION, true );
 	wp_enqueue_script( 'apgallery' );
 	wp_add_inline_script( 'apgallery', apgallery_public_js() );
-
-	$media = apgallery_get_album_media( $album_id, (int) $atts['pagesize'] );
-
-	if ( is_wp_error( $media ) ) {
-		return '<p>' . esc_html( $media->get_error_message() ) . '</p>';
-	}
 
 	$columns = min( 6, max( 1, (int) $atts['columns'] ) );
 

@@ -4,7 +4,7 @@ Tags: gallery, google-photos, oauth, shortcode, lightbox
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.3.0
+Stable tag: 0.4.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,11 @@ Añade el shortcode [apgallery album="ID_DEL_ALBUM"] en cualquier página o entr
 Sí, con el atributo columns (1-6): [apgallery album="ID" columns="4"]. En móvil el grid se ajusta automáticamente a 2 columnas.
 
 == Changelog ==
+
+= 0.4.0 =
+* Caché de 5 minutos para la respuesta de la API del shortcode (atributo cache="0" para desactivarla por instancia)
+* La caché se limpia automáticamente al conectar o desconectar la cuenta de Google
+* Menos llamadas a la API en cada visita y protección de la cuota (las baseUrl de Google expiran en ~1 h)
 
 = 0.3.0 =
 * Nueva pestaña "Google Photos" en el modal de la biblioteca de medios del editor: elige álbum, selecciona una foto e impórtala para insertarla como imagen normal.
