@@ -83,7 +83,7 @@ define( 'AUTH_SALT', 'test' );
 define( 'SECURE_AUTH_SALT', 'test' );
 define( 'LOGGED_IN_SALT', 'test' );
 define( 'NONCE_SALT', 'test' );
-\\$table_prefix = 'wptests_';
+\$table_prefix = 'wptests_';
 if ( false !== getenv( 'WP_TESTS_PHPUNIT_POLYFILLS_PATH' ) ) {
     define( 'WP_TESTS_PHPUNIT_POLYFILLS_PATH', getenv( 'WP_TESTS_PHPUNIT_POLYFILLS_PATH' ) );
 }
