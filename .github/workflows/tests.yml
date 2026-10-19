@@ -73,7 +73,7 @@ jobs:
       - name: Install WordPress test suite
         run: bash tests/install-wp-tests.sh wordpress_test root root 127.0.0.1:3306 "$WP_VERSION"
 
-      - name: Install PHPUnit
+      - name: Install PHPUnit + Polyfills
         run: |
           mkdir -p vendor/bin
           if [ "${{ matrix.php }}" = "7.4" ]; then
@@ -82,6 +82,9 @@ jobs:
             curl -sL https://phar.phpunit.de/phpunit-9.6.29.phar -o vendor/bin/phpunit
           fi
           chmod +x vendor/bin/phpunit
+          # PHPUnit Polyfills (requerido por el bootstrap de WP).
+          cd /tmp && composer -n require yoast/phpunit-polyfills --no-progress || true
+          echo "WP_TESTS_PHPUNIT_POLYFILLS_PATH=/tmp/vendor/yoast/phpunit-polyfills" >> "$GITHUB_ENV"
 
       - name: Run tests
         run: |
