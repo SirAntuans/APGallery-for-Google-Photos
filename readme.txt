@@ -4,7 +4,7 @@ Tags: gallery, google-photos, oauth, shortcode, lightbox
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.5.0
+Stable tag: 0.5.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,10 @@ Añade el shortcode [apgallery album="ID_DEL_ALBUM"] en cualquier página o entr
 Sí, con el atributo columns (1-6): [apgallery album="ID" columns="4"]. En móvil el grid se ajusta automáticamente a 2 columnas.
 
 == Changelog ==
+
+= 0.5.1 =
+* Fix: error de sintaxis PHP (comillas sin escapar en el JS del modal de medios) que hacia el plugin inutilizable al activarlo
+* CI: matriz de tests con WordPress 6.4/latest, PHP 7.4-8.3 y multisite; 10 tests de integración (activación, shortcode, escapado XSS, cache y cifrado)
 
 = 0.5.0 =
 * Refresh token cifrado en la base de datos (AES-256-CBC + HMAC, clave derivada de wp_salt); migración automática de instalaciones previas

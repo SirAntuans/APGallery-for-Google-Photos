@@ -1,0 +1,92 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  php-lint:
+    name: PHP syntax check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.0', '8.1', '8.2', '8.3']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Lint plugin files
+        run: |
+          find . -path ./.git -prune -o -name '*.php' -print0 | xargs -0 -n1 -P4 php -l
+
+  wordpress-tests:
+    name: WP ${{ matrix.wp }} / PHP ${{ matrix.php }} (multisite ${{ matrix.multisite }})
+    needs: php-lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.2']
+        wp: ['latest', '6.4']
+        multisite: [0, 1]
+        exclude:
+          - php: '7.4'
+            wp: '6.4'
+            multisite: 1
+    services:
+      mysql:
+        image: mysql:8.0
+        ports:
+          - 3306:3306
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: wordpress_test
+        options: >-
+          --health-cmd "mysqladmin ping --silent"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      WP_VERSION: ${{ matrix.wp }}
+      WP_MULTISITE: ${{ matrix.multisite }}
+      PHP_VERSION: ${{ matrix.php }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mysql, curl, xml, mbstring, gd
+          coverage: none
+
+      - name: Install WordPress test suite
+        run: bash tests/install-wp-tests.sh wordpress_test root root 127.0.0.1:3306 "$WP_VERSION"
+
+      - name: Install PHPUnit + Polyfills
+        run: |
+          mkdir -p vendor/bin
+          if [ "${{ matrix.php }}" = "7.4" ]; then
+            curl -sL https://phar.phpunit.de/phpunit-7.5.20.phar -o vendor/bin/phpunit
+          else
+            curl -sL https://phar.phpunit.de/phpunit-9.6.29.phar -o vendor/bin/phpunit
+          fi
+          chmod +x vendor/bin/phpunit
+          # PHPUnit Polyfills (requerido por el bootstrap de WP).
+          cd /tmp && composer -n require yoast/phpunit-polyfills --no-progress || true
+          echo "WP_TESTS_PHPUNIT_POLYFILLS_PATH=/tmp/vendor/yoast/phpunit-polyfills" >> "$GITHUB_ENV"
+
+      - name: Run tests
+        run: |
+          WP_TESTS_DIR=/tmp/wordpress-tests-lib WP_CORE_DIR=/tmp/wordpress \
+            vendor/bin/phpunit -c tests/phpunit.xml.dist
