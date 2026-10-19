@@ -42,9 +42,14 @@ install_test_suite() {
 
     # Descargar wordpress-develop (tag correspondiente) que contiene el suite completo.
     if [ "$WP_VERSION" = "latest" ]; then
-        download "https://github.com/WordPress/wordpress-develop/archive/refs/heads/master.zip" /tmp/wpdev.zip
+        WPDEV_REF=master
     else
-        download "https://github.com/WordPress/wordpress-develop/archive/refs/tags/$WP_VERSION.zip" /tmp/wpdev.zip
+        WPDEV_REF="$WP_VERSION"
+    fi
+    download "https://github.com/WordPress/wordpress-develop/archive/refs/tags/$WPDEV_REF.zip" /tmp/wpdev.zip
+    if [ ! -s /tmp/wpdev.zip ] || ! unzip -tq /tmp/wpdev.zip >/dev/null 2>&1; then
+        # Fallback al branch master si el tag no existe.
+        download "https://github.com/WordPress/wordpress-develop/archive/refs/heads/master.zip" /tmp/wpdev.zip
     fi
     rm -rf /tmp/wpdev-extract
     mkdir -p /tmp/wpdev-extract
