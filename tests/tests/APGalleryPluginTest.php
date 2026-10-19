@@ -97,12 +97,21 @@ class APGalleryPluginTest extends WP_UnitTestCase {
 	 * flush_media_cache elimina los transientes de media.
 	 */
 	public function test_flush_media_cache() {
+		global $wpdb;
+
 		$cache_key = APGALLERY_OPT_PREFIX . 'media_' . md5( 'album-y|24' );
 		set_transient( $cache_key, array( 'mediaItems' => array() ), APGALLERY_CACHE_TTL );
 
 		apgallery_flush_media_cache();
 
-		$this->assertFalse( get_transient( $cache_key ) );
+		// Verificar contra la BD (get_transient puede servirse de la object cache).
+		$row = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s",
+				'_transient_' . $cache_key
+			)
+		);
+		$this->assertNull( $row );
 	}
 
 	/**
