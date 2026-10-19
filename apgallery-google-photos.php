@@ -3,7 +3,7 @@
  * Plugin Name:       APGallery for Google Photos
  * Plugin URI:        https://apsoft.example.com/apgallery-google-photos
  * Description:       Muestra álbumes y fotos de Google Photos en la galería de tu sitio mediante el shortcode [apgallery]. Conexión segura vía OAuth 2.0.
- * Version:           0.5.1
+ * Version:           0.5.2
  * Requires at least: 6.0
  * Requires PHP:       7.4
  * Author:             APSoft
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'APGALLERY_VERSION', '0.5.1' );
+define( 'APGALLERY_VERSION', '0.5.2' );
 define( 'APGALLERY_OPT_PREFIX', 'apgallery_' );
 define( 'APGALLERY_CACHE_TTL', 5 * MINUTE_IN_SECONDS );
 
@@ -514,6 +514,12 @@ function apgallery_oauth_callback() {
 	}
 
 	$body = json_decode( wp_remote_retrieve_body( $response ), true );
+	if ( empty( $body['access_token'] ) ) {
+		$fail( __( 'Google no devolvió el token de acceso.', 'apgallery-google-photos' ) );
+	}
+	if ( false === strpos( (string) ( $body['scope'] ?? '' ), 'photoslibrary.readonly' ) ) {
+		$fail( __( 'Google no concedió el permiso de Google Photos. Añade el scope photoslibrary.readonly en OAuth consent screen (Data Access), revoca el acceso de la app en tu cuenta de Google y vuelve a conectar.', 'apgallery-google-photos' ) );
+	}
 	if ( empty( $body['refresh_token'] ) ) {
 		$fail( __( 'Google no devolvió el refresh token. Revoca el acceso en tu cuenta de Google y conéctate de nuevo.', 'apgallery-google-photos' ) );
 	}
@@ -655,7 +661,7 @@ function apgallery_render_media_page() {
 
 	echo '<div class="apgallery-media-grid">';
 	foreach ( $media['mediaItems'] as $item ) {
-		if ( 'PHOTO' !== ( $item['mimeType'] ?? '' ) ) {
+		if ( 0 !== strpos( ( $item['mimeType'] ?? '' ), 'image/' ) ) {
 			continue;
 		}
 		$thumb     = $item['baseUrl'] . '=w300-h300-c';
@@ -825,7 +831,7 @@ function apgallery_ajax_modal_media() {
 
 	$out = array();
 	foreach ( ( $media['mediaItems'] ?? array() ) as $item ) {
-		if ( 'PHOTO' !== ( $item['mimeType'] ?? '' ) ) {
+		if ( 0 !== strpos( ( $item['mimeType'] ?? '' ), 'image/' ) ) {
 			continue;
 		}
 		$out[] = array(
@@ -1188,7 +1194,7 @@ function apgallery_render_shortcode( $atts ) {
 			<?php
 			if ( ! empty( $media['mediaItems'] ) ) {
 				foreach ( $media['mediaItems'] as $item ) {
-					if ( 'PHOTO' !== ( $item['mimeType'] ?? '' ) ) {
+					if ( 0 !== strpos( ( $item['mimeType'] ?? '' ), 'image/' ) ) {
 						continue; // Ignorar vídeos por ahora.
 					}
 					$thumb = $item['baseUrl'] . '=w400-h400-c';
@@ -1256,7 +1262,7 @@ function apgallery_ajax_front_media() {
 
 	$out = '';
 	foreach ( ( $media['mediaItems'] ?? array() ) as $item ) {
-		if ( 'PHOTO' !== ( $item['mimeType'] ?? '' ) ) {
+		if ( 0 !== strpos( ( $item['mimeType'] ?? '' ), 'image/' ) ) {
 			continue;
 		}
 		$thumb = $item['baseUrl'] . '=w400-h400-c';

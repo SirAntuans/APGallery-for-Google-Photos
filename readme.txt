@@ -4,7 +4,7 @@ Tags: gallery, google-photos, oauth, shortcode, lightbox
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.5.1
+Stable tag: 0.5.2
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,10 @@ Añade el shortcode [apgallery album="ID_DEL_ALBUM"] en cualquier página o entr
 Sí, con el atributo columns (1-6): [apgallery album="ID" columns="4"]. En móvil el grid se ajusta automáticamente a 2 columnas.
 
 == Changelog ==
+
+= 0.5.2 =
+* Fix: las fotos no se mostraban nunca (el filtro usaba mimeType "PHOTO", que la API de Google Photos nunca devuelve; ahora se acepta cualquier mimeType image/*)
+* Fix: el callback OAuth detecta ahora si Google concede un token sin el scope photoslibrary.readonly y muestra un aviso claro en vez del error "Request had insufficient authentication scopes" durante el uso
 
 = 0.5.1 =
 * Fix: error de sintaxis PHP (comillas sin escapar en el JS del modal de medios) que hacia el plugin inutilizable al activarlo
