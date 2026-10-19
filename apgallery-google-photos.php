@@ -761,9 +761,15 @@ function apgallery_render_shortcode( $atts ) {
 			if ( ! empty( $attachment_ids ) ) {
 				foreach ( $attachment_ids as $attachment_id ) {
 					$full = wp_get_attachment_url( $attachment_id );
-					$thumb = wp_get_attachment_image_url( $attachment_id, 'apgallery-thumb' );
-					if ( ! $full || ! $thumb ) {
+					if ( ! $full ) {
 						continue;
+					}
+					$thumb = wp_get_attachment_image_url( $attachment_id, 'apgallery-thumb' );
+					if ( ! $thumb ) {
+						$thumb = wp_get_attachment_image_url( $attachment_id, 'thumbnail' );
+					}
+					if ( ! $thumb ) {
+						$thumb = $full;
 					}
 					$alt = get_post_meta( $attachment_id, '_wp_attachment_image_alt', true );
 					if ( '' === $alt ) {
