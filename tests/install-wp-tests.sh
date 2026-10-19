@@ -91,6 +91,10 @@ define( 'WP_TESTS_FORCE_KNOWN_BUGS', false );
 define( 'WP_DEBUG', true );
 define( 'WP_DEBUG_DISPLAY', false );
 define( 'WP_DEBUG_LOG', true );
+define( 'WP_PHP_BINARY', 'php' );
+define( 'WP_TESTS_DOMAIN', 'example.org' );
+define( 'WP_TESTS_EMAIL', 'admin@example.org' );
+define( 'WP_TESTS_TITLE', 'APGallery Tests' );
 define( 'DIR_TESTDATA', '$WP_TESTS_DIR/data' );
 define( 'WP_RUN_CORE_TESTS', false );
 EOF
