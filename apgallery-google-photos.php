@@ -971,15 +971,15 @@ function apgallery_media_modal_js() {
 		},
 		render: function () {
 			var options = this.albums.map(function (a) {
-				return '<option value="' + a.id + '">' + a.title + '</option>';
+				return '<option value=\"' + a.id + '\">' + a.title + '</option>';
 			}).join('');
 			this.$el.html(
-				'<div class="apgallery-modal-toolbar">' +
+				'<div class=\"apgallery-modal-toolbar\">' +
 					'<label><strong>' + APGALLERY_MODAL.i18n.title + '</strong> ' +
-					'<select class="apgallery-modal-album"><option value="">' + APGALLERY_MODAL.i18n.selectAlbum + '</option>' + options + '</select></label>' +
-					'<button type="button" class="button apgallery-load-more" hidden>' + APGALLERY_MODAL.i18n.loadMore + '</button>' +
+					'<select class=\"apgallery-modal-album\"><option value=\"\">' + APGALLERY_MODAL.i18n.selectAlbum + '</option>' + options + '</select></label>' +
+					'<button type=\"button\" class=\"button apgallery-load-more\" hidden>' + APGALLERY_MODAL.i18n.loadMore + '</button>' +
 				'</div>' +
-				'<div class="apgallery-modal-grid"></div>'
+				'<div class=\"apgallery-modal-grid\"></div>'
 			);
 			if (this.album) this.$('.apgallery-modal-album').val(this.album);
 			this.delegateEvents();
@@ -1020,15 +1020,15 @@ function apgallery_media_modal_js() {
 				self.nextToken = res.data.next_token;
 				var $grid = self.$('.apgallery-modal-grid');
 				$.each(res.data.items, function (i, item) {
-					var $el = $('<div class="apgallery-modal-item"></div>')
+					var $el = $('<div class=\"apgallery-modal-item\"></div>')
 						.append($('<img />').attr({ src: item.thumb, alt: item.filename, loading: 'lazy' }));
-					if (item.imported_id) $el.append($('<span class="apgallery-badge"></span>').text(APGALLERY_MODAL.i18n.imported));
+					if (item.imported_id) $el.append($('<span class=\"apgallery-badge\"></span>').text(APGALLERY_MODAL.i18n.imported));
 					$el.data(item);
 					$grid.append($el);
 				});
 				$btn.toggle(!!self.nextToken).text(APGALLERY_MODAL.i18n.loadMore).prop('disabled', false);
 				if (!res.data.items.length && !$grid.children().length) {
-					$grid.append($('<p class="apgallery-modal-empty"></p>').text(APGALLERY_MODAL.i18n.noPhotos));
+					$grid.append($('<p class=\"apgallery-modal-empty\"></p>').text(APGALLERY_MODAL.i18n.noPhotos));
 				}
 			});
 		},
