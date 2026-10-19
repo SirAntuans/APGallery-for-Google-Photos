@@ -1,12 +1,12 @@
 <?php
 /**
- * Tests de integración de APGallery para Google Photos.
+ * Tests de integración de APGallery para Google Photos (Picker API).
  *
  * @package apgallery-google-photos
  */
 
 /**
- * Test de activación, shortcode y sanitización.
+ * Test de activación, shortcode, importación y sanitización.
  */
 class APGalleryPluginTest extends WP_UnitTestCase {
 
@@ -16,7 +16,8 @@ class APGalleryPluginTest extends WP_UnitTestCase {
 	public function test_plugin_constants() {
 		$this->assertTrue( defined( 'APGALLERY_VERSION' ) );
 		$this->assertTrue( defined( 'APGALLERY_OPT_PREFIX' ) );
-		$this->assertTrue( defined( 'APGALLERY_CACHE_TTL' ) );
+		$this->assertTrue( defined( 'APGALLERY_PICKER_ENDPOINT' ) );
+		$this->assertSame( 'https://photospicker.googleapis.com/', APGALLERY_PICKER_ENDPOINT );
 	}
 
 	/**
@@ -31,6 +32,13 @@ class APGalleryPluginTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * El scope solicitado es el de la Picker API (la Library API fue retirada).
+	 */
+	public function test_scope_is_picker_scope() {
+		$this->assertSame( 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly', APGALLERY_SCOPE );
+	}
+
+	/**
 	 * El shortcode [apgallery] se registra.
 	 */
 	public function test_shortcode_registered() {
@@ -38,80 +46,56 @@ class APGalleryPluginTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Shortcode sin atributo album devuelve aviso, no error fatal.
+	 * El shortcode sin fotos importadas muestra el aviso de vacío, no error fatal.
 	 */
-	public function test_shortcode_without_album_returns_notice() {
+	public function test_shortcode_without_photos_returns_notice() {
 		$out = do_shortcode( '[apgallery]' );
-		$this->assertStringContainsString( 'falta el atributo album', $out );
-	}
-
-	/**
-	 * El render del shortcode escapa el ID del álbum (XSS).
-	 */
-	public function test_shortcode_escapes_album_id() {
-		// Sin conexión a Google el render devolverá un error, pero el ID
-		// malicioso nunca debe llegar crudo al HTML.
-		$out = do_shortcode( '[apgallery album=\'"><script>alert(1)</script>\']' );
-		$this->assertStringNotContainsString( '<script>alert(1)</script>', $out );
+		$this->assertStringContainsString( 'apgallery-wrapper', $out );
+		$this->assertStringContainsString( 'Aún no hay fotos importadas', $out );
 	}
 
 	/**
 	 * El atributo columns se limita al rango 1-6.
 	 */
 	public function test_shortcode_columns_clamped() {
-		// Se verifica indirectamente: el valor se pasa a (int) y clamp,
-		// así que con columns=99 el markup no debe contener cols-99.
-		$out = do_shortcode( '[apgallery album="abc" columns="99"]' );
+		$out = do_shortcode( '[apgallery columns="99"]' );
 		$this->assertStringNotContainsString( 'cols-99', $out );
 		$this->assertStringNotContainsString( 'data-columns="99"', $out );
+		$this->assertStringContainsString( 'apgallery-cols-6', $out );
 	}
 
 	/**
-	 * La caché de media guarda y devuelve el mismo payload.
+	 * Las fotos marcadas como picked aparecen en el shortcode con escapado (XSS).
 	 */
-	public function test_media_cache_roundtrip() {
-		$media = array(
-			'mediaItems'    => array(
-				array(
-					'id'       => 'm1',
-					'baseUrl'   => 'https://lh3.example/b1',
-					'filename' => 'foto.jpg',
-					'mimeType' => 'PHOTO',
-				),
-			),
-			'nextPageToken' => 'tok2',
+	public function test_shortcode_renders_picked_attachments_escaped() {
+		$attachment_id = $this->factory->attachment->create_object(
+			array( 'file' => DIR_TESTDATA . '/images/canola.jpg' )
 		);
+		update_post_meta( $attachment_id, 'apgallery_picked', '1' );
+		update_post_meta( $attachment_id, 'apgallery_google_media_id', '"><script>alert(1)</script>' );
 
-		$use_cache = true;
-		apgallery_get_cached_album_media( 'album-x', 24, $use_cache );
+		$out = do_shortcode( '[apgallery]' );
 
-		// Guardar manualmente como lo haría la función tras un fetch real.
-		$cache_key = APGALLERY_OPT_PREFIX . 'media_' . md5( 'album-x|24' );
-		set_transient( $cache_key, $media, APGALLERY_CACHE_TTL );
-
-		$cached = apgallery_get_cached_album_media( 'album-x', 24, $use_cache );
-		$this->assertSame( $media, $cached );
+		$this->assertStringContainsString( 'apgallery-item', $out );
+		$this->assertStringNotContainsString( '<script>alert(1)</script>', $out );
 	}
 
 	/**
-	 * flush_media_cache elimina los transientes de media.
+	 * get_picked_attachments devuelve solo adjuntos marcados como picked.
 	 */
-	public function test_flush_media_cache() {
-		global $wpdb;
-
-		$cache_key = APGALLERY_OPT_PREFIX . 'media_' . md5( 'album-y|24' );
-		set_transient( $cache_key, array( 'mediaItems' => array() ), APGALLERY_CACHE_TTL );
-
-		apgallery_flush_media_cache();
-
-		// Verificar contra la BD (get_transient puede servirse de la object cache).
-		$row = $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s",
-				'_transient_' . $cache_key
-			)
+	public function test_get_picked_attachments_filters_by_meta() {
+		$marked = $this->factory->attachment->create_object(
+			array( 'file' => DIR_TESTDATA . '/images/canola.jpg' )
 		);
-		$this->assertNull( $row );
+		$other  = $this->factory->attachment->create_object(
+			array( 'file' => DIR_TESTDATA . '/images/test-image.jpg' )
+		);
+		update_post_meta( $marked, 'apgallery_picked', '1' );
+
+		$ids = apgallery_get_picked_attachments();
+
+		$this->assertContains( $marked, $ids );
+		$this->assertNotContains( $other, $ids );
 	}
 
 	/**
@@ -119,18 +103,36 @@ class APGalleryPluginTest extends WP_UnitTestCase {
 	 */
 	public function test_encrypt_decrypt_roundtrip() {
 		$secret = 'my-super-secret-refresh-token';
-		$enc   = apgallery_encrypt( $secret );
+		$enc    = apgallery_encrypt( $secret );
 
 		$this->assertNotSame( $secret, $enc );
 		$this->assertSame( $secret, apgallery_decrypt( $enc ) );
 	}
 
 	/**
-	 * Sin refresh token, la petición a la API devuelve WP_Error.
+	 * Sin refresh token, las llamadas a la API devuelven WP_Error.
 	 */
-	public function test_remote_request_without_token_is_error() {
+	public function test_api_call_without_connection_returns_error() {
 		delete_option( 'apgallery_refresh_token' );
-		$result = apgallery_get_access_token();
+		delete_transient( 'apgallery_access_token' );
+
+		$result = apgallery_create_picker_session();
+
 		$this->assertWPError( $result );
+		$this->assertSame( 'apgallery_not_connected', $result->get_error_code() );
+	}
+
+	/**
+	 * find_imported_media_id localiza adjuntos por su ID de Google.
+	 */
+	public function test_find_imported_media_id() {
+		$attachment_id = $this->factory->attachment->create_object(
+			array( 'file' => DIR_TESTDATA . '/images/canola.jpg' )
+		);
+		update_post_meta( $attachment_id, 'apgallery_google_media_id', 'gp-id-123' );
+
+		$this->assertSame( $attachment_id, apgallery_find_imported_media_id( 'gp-id-123' ) );
+		$this->assertSame( 0, apgallery_find_imported_media_id( 'no-existe' ) );
+		$this->assertSame( 0, apgallery_find_imported_media_id( '' ) );
 	}
 }
