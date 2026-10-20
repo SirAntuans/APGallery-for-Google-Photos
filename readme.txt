@@ -28,8 +28,11 @@ Flujo de uso:
 2. Activa el plugin desde el menú "Plugins".
 3. Crea un proyecto en Google Cloud Console, habilita la **Google Photos Picker API** y crea credenciales OAuth 2.0 (aplicación web).
 4. Copia la URL de redirección mostrada en los ajustes del plugin como redirección autorizada en Google Cloud Console.
-5. Introduce tu Client ID y Client Secret en Ajustes → APGallery Google Photos y conecta tu cuenta.
-6. Añade tu cuenta de Google como *test user* en el OAuth consent screen si la app está en modo "Testing".
+5. En el OAuth consent screen, añade tu cuenta de Google como *test user* si la app está en modo "Testing".
+6. Introduce tu Client ID y Client Secret en Ajustes → APGallery Google Photos y conecta tu cuenta.
+7. Pulsa "Elegir fotos de Google Photos", selecciona tus fotos en el selector de Google, pulsa "Hecho" y luego "Sincronizar fotos seleccionadas".
+
+Guía completa con capturas y resolución de errores comunes (Protección Avanzada, redirect_uri_mismatch, tokens de prueba que caducan a los 7 días, etc.) en el README del repositorio de GitHub.
 
 == Frequently Asked Questions ==
 
