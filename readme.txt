@@ -4,7 +4,7 @@ Tags: gallery, google-photos, oauth, shortcode, lightbox
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.6.0
+Stable tag: 1.0.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -28,8 +28,11 @@ Flujo de uso:
 2. Activa el plugin desde el menú "Plugins".
 3. Crea un proyecto en Google Cloud Console, habilita la **Google Photos Picker API** y crea credenciales OAuth 2.0 (aplicación web).
 4. Copia la URL de redirección mostrada en los ajustes del plugin como redirección autorizada en Google Cloud Console.
-5. Introduce tu Client ID y Client Secret en Ajustes → APGallery Google Photos y conecta tu cuenta.
-6. Añade tu cuenta de Google como *test user* en el OAuth consent screen si la app está en modo "Testing".
+5. En el OAuth consent screen, añade tu cuenta de Google como *test user* si la app está en modo "Testing".
+6. Introduce tu Client ID y Client Secret en Ajustes → APGallery Google Photos y conecta tu cuenta.
+7. Pulsa "Elegir fotos de Google Photos", selecciona tus fotos en el selector de Google, pulsa "Hecho" y luego "Sincronizar fotos seleccionadas".
+
+Guía completa con capturas y resolución de errores comunes (Protección Avanzada, redirect_uri_mismatch, tokens de prueba que caducan a los 7 días, etc.) en el README del repositorio de GitHub.
 
 == Frequently Asked Questions ==
 
@@ -46,6 +49,16 @@ Google eliminó el 31 de marzo de 2025 los scopes de la Library API que permití
 Sí. Al sincronizar, las fotos se importan a la biblioteca de medios de WordPress, así que se sirven desde tu propio sitio y no dependen de URLs de Google que expiran.
 
 == Changelog ==
+
+= 1.0.0 =
+* Primera versi00f3n estable: flujo completo verificado con la Google Photos Picker API (conectar 2192 seleccionar 2192 sincronizar 2192 galer00eda)
+* Documentaci00f3n completa de configuraci00f3n de Google Cloud y errores conocidos en el README del repositorio
+
+= 0.6.2 =
+* Fix: las descargas de las fotos devolv00edan 403 Forbidden porque las baseUrl de la Picker API exigen el header Authorization Bearer (a diferencia de la Library API); ahora se descargan con wp_safe_remote_get + access token antes de importarlas a medios
+
+= 0.6.1 =
+* La sincronización muestra ahora los errores concretos de cada foto que no se pudo importar (antes se ocultaban y solo se ve00eda "0 fotos importadas")
 
 = 0.6.0 =
 * Migración a la Google Photos Picker API: Google eliminó los scopes de la Library API (photoslibrary.readonly) el 31/03/2025, lo que provocaba el error "Request had insufficient authentication scopes".

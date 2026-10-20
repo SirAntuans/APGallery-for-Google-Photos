@@ -3,7 +3,7 @@
  * Plugin Name:       APGallery for Google Photos
  * Plugin URI:        https://apsoft.example.com/apgallery-google-photos
  * Description:       Muestra fotos de Google Photos en tu sitio mediante el shortcode [apgallery], usando la Google Photos Picker API (OAuth 2.0).
- * Version:           0.6.0
+ * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:       7.4
  * Author:             APSoft
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'APGALLERY_VERSION', '0.6.0' );
+define( 'APGALLERY_VERSION', '1.0.0' );
 define( 'APGALLERY_OPT_PREFIX', 'apgallery_' );
 define( 'APGALLERY_PICKER_ENDPOINT', 'https://photospicker.googleapis.com/' );
 define( 'APGALLERY_SCOPE', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly' );
@@ -360,9 +360,52 @@ function apgallery_import_picked_item( $item ) {
 		require_once ABSPATH . 'wp-admin/includes/image.php';
 	}
 
-	$tmp = download_url( $baseurl, 300 );
-	if ( is_wp_error( $tmp ) ) {
-		return $tmp;
+	// Las baseUrl de la Picker API requieren el header Authorization (a diferencia
+	// de la Library API); download_url() no lo envía y Google responde 403 Forbidden.
+	$access_token = apgallery_get_access_token();
+	if ( is_wp_error( $access_token ) ) {
+		return $access_token;
+	}
+
+	$response = wp_safe_remote_get(
+		$baseurl,
+		array(
+			'timeout' => 300,
+			'headers' => array(
+				'Authorization' => 'Bearer ' . $access_token,
+			),
+		)
+	);
+	if ( is_wp_error( $response ) ) {
+		return $response;
+	}
+
+	if ( 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+		return new WP_Error(
+			'apgallery_download_error',
+			sprintf(
+					/* translators: %d: código HTTP de la descarga. */
+					__( 'Error al descargar la foto de Google (HTTP %d).', 'apgallery-google-photos' ),
+					(int) wp_remote_retrieve_response_code( $response )
+				)
+		);
+	}
+
+	$content = wp_remote_retrieve_body( $response );
+	if ( '' === $content ) {
+		return new WP_Error( 'apgallery_download_error', __( 'Google devolvió una respuesta vacía al descargar la foto.', 'apgallery-google-photos' ) );
+	}
+
+	$tmp = wp_tempnam( $filename );
+	if ( ! $tmp ) {
+		return new WP_Error( 'apgallery_download_error', __( 'No se pudo crear el archivo temporal para la foto.', 'apgallery-google-photos' ) );
+	}
+
+// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+	$bytes = file_put_contents( $tmp, $content );
+	if ( false === $bytes || 0 === $bytes ) {
+		@unlink( $tmp ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		return new WP_Error( 'apgallery_download_error', __( 'No se pudo guardar la foto descargada en el servidor.', 'apgallery-google-photos' ) );
 	}
 
 	$file_array = array(
@@ -407,12 +450,24 @@ function apgallery_sync_picker_session( $session_id ) {
 	}
 
 	$imported = 0;
+	$errors   = array();
 	foreach ( $items as $item ) {
 		$result = apgallery_import_picked_item( $item );
 		if ( is_wp_error( $result ) ) {
+			$errors[] = sprintf(
+				'(%s) %s',
+				$item['mediaFile']['filename'] ?? ( $item['id'] ?? '?' ),
+				$result->get_error_message()
+			);
 			continue;
 		}
 		$imported++;
+	}
+
+	if ( ! empty( $errors ) ) {
+		update_option( APGALLERY_OPT_PREFIX . 'last_import_errors', array_slice( $errors, 0, 10 ), false );
+	} else {
+		delete_option( APGALLERY_OPT_PREFIX . 'last_import_errors' );
 	}
 
 	apgallery_delete_picker_session( $session_id );
@@ -536,8 +591,16 @@ function apgallery_render_settings_page() {
 					)
 				)
 			);
+			$last_errors = get_option( APGALLERY_OPT_PREFIX . 'last_import_errors' );
+			if ( ! empty( $last_errors ) ) {
+					echo '<div class="notice notice-error"><p><strong>' . esc_html__( 'Errores de importación:', 'apgallery-google-photos' ) . '</strong></p><ul style="list-style:disc;margin-left:2em;">';
+					foreach ( (array) $last_errors as $import_error ) {
+						echo '<li>' . esc_html( $import_error ) . '</li>';
+					}
+					echo '</ul></div>';
+				}
+			}
 		}
-	}
 
 	$client_id     = get_option( APGALLERY_OPT_PREFIX . 'client_id' );
 	$client_secret = get_option( APGALLERY_OPT_PREFIX . 'client_secret' );

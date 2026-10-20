@@ -17,6 +17,8 @@ $apgallery_options = array(
 	'apgallery_refresh_token',
 	'apgallery_picker_session_id',
 	'apgallery_picker_session_uri',
+	'apgallery_last_import_errors',
+	'apgallery_picker_session_uri',
 );
 
 foreach ( $apgallery_options as $apgallery_option ) {
