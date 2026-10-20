@@ -4,7 +4,7 @@ Tags: gallery, google-photos, oauth, shortcode, lightbox
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 0.6.0
+Stable tag: 0.6.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -46,6 +46,9 @@ Google eliminó el 31 de marzo de 2025 los scopes de la Library API que permití
 Sí. Al sincronizar, las fotos se importan a la biblioteca de medios de WordPress, así que se sirven desde tu propio sitio y no dependen de URLs de Google que expiran.
 
 == Changelog ==
+
+= 0.6.1 =
+* La sincronización muestra ahora los errores concretos de cada foto que no se pudo importar (antes se ocultaban y solo se ve00eda "0 fotos importadas")
 
 = 0.6.0 =
 * Migración a la Google Photos Picker API: Google eliminó los scopes de la Library API (photoslibrary.readonly) el 31/03/2025, lo que provocaba el error "Request had insufficient authentication scopes".

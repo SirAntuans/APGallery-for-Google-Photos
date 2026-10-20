@@ -3,7 +3,7 @@
  * Plugin Name:       APGallery for Google Photos
  * Plugin URI:        https://apsoft.example.com/apgallery-google-photos
  * Description:       Muestra fotos de Google Photos en tu sitio mediante el shortcode [apgallery], usando la Google Photos Picker API (OAuth 2.0).
- * Version:           0.6.0
+ * Version:           0.6.1
  * Requires at least: 6.0
  * Requires PHP:       7.4
  * Author:             APSoft
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'APGALLERY_VERSION', '0.6.0' );
+define( 'APGALLERY_VERSION', '0.6.1' );
 define( 'APGALLERY_OPT_PREFIX', 'apgallery_' );
 define( 'APGALLERY_PICKER_ENDPOINT', 'https://photospicker.googleapis.com/' );
 define( 'APGALLERY_SCOPE', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly' );
@@ -407,12 +407,24 @@ function apgallery_sync_picker_session( $session_id ) {
 	}
 
 	$imported = 0;
+	$errors   = array();
 	foreach ( $items as $item ) {
 		$result = apgallery_import_picked_item( $item );
 		if ( is_wp_error( $result ) ) {
+			$errors[] = sprintf(
+				'(%s) %s',
+				$item['mediaFile']['filename'] ?? ( $item['id'] ?? '?' ),
+				$result->get_error_message()
+			);
 			continue;
 		}
 		$imported++;
+	}
+
+	if ( ! empty( $errors ) ) {
+		update_option( APGALLERY_OPT_PREFIX . 'last_import_errors', array_slice( $errors, 0, 10 ), false );
+	} else {
+		delete_option( APGALLERY_OPT_PREFIX . 'last_import_errors' );
 	}
 
 	apgallery_delete_picker_session( $session_id );
@@ -536,8 +548,16 @@ function apgallery_render_settings_page() {
 					)
 				)
 			);
+			$last_errors = get_option( APGALLERY_OPT_PREFIX . 'last_import_errors' );
+			if ( ! empty( $last_errors ) ) {
+					echo '<div class="notice notice-error"><p><strong>' . esc_html__( 'Errores de importación:', 'apgallery-google-photos' ) . '</strong></p><ul style="list-style:disc;margin-left:2em;">';
+					foreach ( (array) $last_errors as $import_error ) {
+						echo '<li>' . esc_html( $import_error ) . '</li>';
+					}
+					echo '</ul></div>';
+				}
+			}
 		}
-	}
 
 	$client_id     = get_option( APGALLERY_OPT_PREFIX . 'client_id' );
 	$client_secret = get_option( APGALLERY_OPT_PREFIX . 'client_secret' );
