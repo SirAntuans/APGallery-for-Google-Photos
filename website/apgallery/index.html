@@ -1,12 +1,11 @@
-<?php
-$year = date("Y");
-header("Content-Type: text/html; charset=utf-8");
-?><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es-MX">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>APGallery for Google Photos | apsoft.xyz</title>
+
 <meta name="description" content="Plugin de WordPress que muestra tus fotos de Google Photos con [apgallery]. Picker API oficial, OAuth 2.0, lightbox y grid responsive.">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -407,7 +406,7 @@ th { background: rgba(0,40,0,0.5); color: var(--green); }
     </section>
 
     <footer class="footer">
-        [APS0FT] &copy; <?= $year ?> &mdash; <strong>apsoft.xyz</strong> &middot; APGallery for Google Photos &middot;
+        [APS0FT] &copy; <span id="year">2026</span> &mdash; <strong>apsoft.xyz</strong> &middot; APGallery for Google Photos &middot;
         <a href="https://github.com/SirAntuans/APGallery-for-Google-Photos" target="_blank" rel="noopener" style="color:#006400">github</a>
     </footer>
 </div>
@@ -433,6 +432,7 @@ function drawMatrix() {
     }
 }
 setInterval(drawMatrix, 50);
+document.getElementById("year").textContent = new Date().getFullYear();
 window.addEventListener("resize", function () {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
