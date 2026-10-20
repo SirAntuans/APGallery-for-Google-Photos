@@ -1,0 +1,442 @@
+<?php
+$year = date("Y");
+header("Content-Type: text/html; charset=utf-8");
+?><!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APGallery for Google Photos | apsoft.xyz</title>
+<meta name="description" content="Plugin de WordPress que muestra tus fotos de Google Photos con [apgallery]. Picker API oficial, OAuth 2.0, lightbox y grid responsive.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+    --green: #00ff41;
+    --green-dark: #006400;
+    --green-dim: #00b32d;
+    --bg: #0a0a0a;
+}
+html { scroll-behavior: smooth; }
+body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: "Courier New", monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+}
+canvas#matrix {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+    opacity: 0.12;
+}
+.layout {
+    position: relative;
+    z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 4rem;
+}
+.header { text-align: center; margin-bottom: 3rem; }
+.header h1 {
+    font-size: clamp(1.4rem, 4vw, 2.2rem);
+    text-shadow: 0 0 18px rgba(0,255,65,0.45);
+    margin-bottom: .75rem;
+}
+.header .subtitle { color: var(--green-dim); font-size: .95rem; line-height: 1.6; }
+.nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+.nav a {
+    color: var(--green);
+    text-decoration: none;
+    border: 1px solid var(--green-dark);
+    border-radius: 4px;
+    padding: .35rem .7rem;
+    font-size: .78rem;
+    transition: background .2s, box-shadow .2s;
+}
+.nav a:hover {
+    background: rgba(0,255,65,0.08);
+    box-shadow: 0 0 12px rgba(0,255,65,0.25);
+}
+.terminal {
+    background: rgba(0,20,0,0.7);
+    border: 1px solid var(--green);
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: left;
+    font-size: .85rem;
+    line-height: 1.7;
+    backdrop-filter: blur(4px);
+    margin-bottom: 2rem;
+    box-shadow: 0 0 24px rgba(0,255,65,0.07);
+}
+.terminal .term-bar {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    color: var(--green-dark);
+    border-bottom: 1px dashed var(--green-dark);
+    padding-bottom: .6rem;
+    margin-bottom: 1rem;
+    font-size: .75rem;
+}
+.terminal .term-bar .dots { display: flex; gap: 5px; }
+.terminal .term-bar .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--green-dark); display: inline-block; }
+.terminal h2 { font-size: 1.05rem; margin-bottom: .9rem; color: var(--green); }
+.terminal h3 { font-size: .9rem; margin: 1.2rem 0 .4rem; color: var(--green); }
+.terminal p { margin-bottom: .7rem; }
+.terminal ol, .terminal ul { padding-left: 1.4rem; }
+.terminal li { margin-bottom: .45rem; }
+.terminal a { color: var(--green); }
+.prompt { color: var(--green); font-weight: bold; }
+.dim { color: var(--green-dark); }
+.code-inline {
+    background: rgba(0,40,0,0.55);
+    border: 1px solid var(--green-dark);
+    border-radius: 4px;
+    padding: .1rem .45rem;
+    font-size: .82rem;
+    color: var(--green);
+    word-break: break-all;
+}
+.code-block {
+    background: rgba(0,30,0,0.6);
+    border: 1px dashed var(--green-dark);
+    border-radius: 6px;
+    padding: .9rem 1rem;
+    margin: .8rem 0;
+    overflow-x: auto;
+    white-space: pre;
+    font-size: .8rem;
+}
+.step-num {
+    display: inline-block;
+    border: 1px solid var(--green);
+    border-radius: 4px;
+    width: 1.5rem;
+    height: 1.5rem;
+    text-align: center;
+    line-height: 1.4rem;
+    margin-right: .4rem;
+    font-size: .8rem;
+}
+.screenshot {
+    margin: 1rem 0;
+    border: 1px dashed var(--green-dark);
+    border-radius: 6px;
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--green-dark);
+    font-size: .78rem;
+}
+.screenshot img {
+    max-width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--green-dark);
+    margin-bottom: .5rem;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: .8rem 0;
+    font-size: .78rem;
+}
+th, td {
+    border: 1px solid var(--green-dark);
+    padding: .5rem .65rem;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: rgba(0,40,0,0.5); color: var(--green); }
+.btn {
+    display: inline-block;
+    border: 1px solid var(--green);
+    border-radius: 6px;
+    padding: .6rem 1.2rem;
+    color: var(--green);
+    text-decoration: none;
+    font-size: .85rem;
+    transition: background .2s, box-shadow .2s;
+    margin: .25rem .3rem .25rem 0;
+}
+.btn:hover {
+    background: rgba(0,255,65,0.12);
+    box-shadow: 0 0 16px rgba(0,255,65,0.35);
+}
+.btn-primary { background: rgba(0,255,65,0.15); }
+.badge {
+    display: inline-block;
+    border: 1px solid var(--green-dark);
+    border-radius: 10px;
+    padding: .15rem .6rem;
+    font-size: .7rem;
+    color: var(--green-dim);
+    margin: 0 .2rem .4rem 0;
+}
+.warn { color: #ffbd2e; }
+.footer {
+    text-align: center;
+    font-size: .7rem;
+    color: var(--green-dark);
+    margin-top: 2.5rem;
+}
+@media (max-width: 600px) {
+    .terminal { padding: 1rem; font-size: .8rem; }
+}
+</style>
+</head>
+<body>
+<canvas id="matrix"></canvas>
+<div class="layout">
+
+    <header class="header">
+        <h1>&gt;_ APGallery for Google Photos</h1>
+        <p class="subtitle">
+            Plugin de WordPress que muestra tus fotos de Google Photos en cualquier página<br>
+            con el shortcode <span class="code-inline">[apgallery]</span> — Google Photos Picker API + OAuth 2.0
+        </p>
+        <div class="nav">
+            <a href="#que-es">&gt; qué_es</a>
+            <a href="#configuracion">&gt; configuracion_google</a>
+            <a href="#wordpress">&gt; conectar_wordpress</a>
+            <a href="#uso">&gt; shortcode</a>
+            <a href="#errores">&gt; errores</a>
+            <a href="#descarga">&gt; descarga</a>
+        </div>
+        <div style="margin-top:1.2rem">
+            <span class="badge">v1.0.1</span>
+            <span class="badge">WordPress 6.0+</span>
+            <span class="badge">PHP 7.4+</span>
+            <span class="badge">GPL-2.0</span>
+        </div>
+    </header>
+
+    <!-- ==================== QUÉ ES ==================== -->
+    <section class="terminal" id="que-es">
+        <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span> apsoft@scripts:~/apgallery &mdash; readme.txt</div>
+        <h2>&gt; ¿Qué es?</h2>
+        <p>APGallery conecta tu cuenta de Google con WordPress mediante la <strong>Google Photos Picker API</strong> y te deja elegir qué fotos compartir desde el selector oficial de Google. Las fotos se importan a tu biblioteca de medios y se muestran en una galería responsive con lightbox.</p>
+        <p class="dim">// Google eliminó el 31/03/2025 los scopes de la antigua Library API.</p>
+        <p class="dim">// La Picker API es la única vía oficial actual para acceder a las fotos del usuario.</p>
+        <div class="screenshot">
+            <!-- CAPTURA: galería final renderizada en una página de tu site -->
+            <img src="capturas/galeria-final.png" alt="Galería APGallery renderizada en una página">
+            captura_01: resultado final de la galería en tu sitio
+        </div>
+        <h3>Características</h3>
+        <ul>
+            <li><span class="status-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#00ff41;margin-right:6px"></span>Selector oficial de Google Photos: eliges tú qué compartir</li>
+            <li>Fotos servidas desde tu hosting (las URLs de Google expiran; los adjuntos locales no)</li>
+            <li>Grid responsive 1-6 columnas + lightbox integrado</li>
+            <li>Refresh token cifrado (AES-256-CBC + HMAC) y refresco automático de tokens</li>
+            <li>Detección de duplicados y validación de scope OAuth</li>
+        </ul>
+    </section>
+
+    <!-- ==================== CONFIGURACIÓN GOOGLE ==================== -->
+    <section class="terminal" id="configuracion">
+        <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span> apsoft@scripts:~/apgallery &mdash; google_cloud.console</div>
+        <h2>&gt; Configuración de la cuenta de Google</h2>
+        <p class="dim"># Solo se hace una vez. Necesitas: una cuenta de Google sin Protección Avanzada.</p>
+
+        <h3><span class="step-num">1</span> Crear el proyecto</h3>
+        <ol>
+            <li>Entra en <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a></li>
+            <li>Selector de proyectos → <strong>Nuevo proyecto</strong> → nómbralo (p. ej. <span class="code-inline">APGallery</span>) → Crear</li>
+        </ol>
+
+        <h3><span class="step-num">2</span> Habilitar la API</h3>
+        <ol>
+            <li><strong>APIs &amp; Services → Library</strong></li>
+            <li>Busca <span class="code-inline">Google Photos Picker API</span> → <strong>Habilitar</strong></li>
+        </ol>
+        <p class="warn">! Solo esta API. La "Photos Library API" ya no sirve para acceder a la biblioteca del usuario.</p>
+        <div class="screenshot">
+            <!-- CAPTURA: pantalla de Library con la Picker API habilitada -->
+            <img src="capturas/picker-api-habilitada.png" alt="Google Photos Picker API habilitada en Google Cloud">
+            captura_02: Library → Google Photos Picker API → Enable
+        </div>
+
+        <h3><span class="step-num">3</span> OAuth consent screen</h3>
+        <ol>
+            <li><strong>APIs &amp; Services → OAuth consent screen</strong> → tipo <strong>External</strong></li>
+            <li>Nombre de app y email de soporte</li>
+            <li><strong>Test users</strong>: añade el email de la cuenta que conectarás <span class="warn">(¡paso crítico! sin esto Google bloquea el acceso)</span></li>
+        </ol>
+        <div class="screenshot">
+            <!-- CAPTURA: consent screen con el test user añadido -->
+            <img src="capturas/consent-test-user.png" alt="OAuth consent screen con test user">
+            captura_03: consent screen → test users
+        </div>
+
+        <h3><span class="step-num">4</span> Credenciales OAuth 2.0</h3>
+        <ol>
+            <li><strong>APIs &amp; Services → Credentials → Create credentials → OAuth client ID</strong></li>
+            <li>Tipo: <strong>Web application</strong></li>
+            <li>En <strong>Authorized redirect URIs</strong> añade la URL exacta que muestra el plugin:</li>
+        </ol>
+        <div class="code-block">https://TU-DOMINIO.com/wp-admin/admin-post.php?action=apgallery_oauth_callback</div>
+        <li>Copia <strong>Client ID</strong> y <strong>Client Secret</strong></li>
+        <div class="screenshot">
+            <!-- CAPTURA: credenciales OAuth con la redirect URI -->
+            <img src="capturas/oauth-credenciales.png" alt="Credenciales OAuth con la URI de redirección">
+            captura_04: OAuth client → redirect URI
+        </div>
+    </section>
+
+    <!-- ==================== WORDPRESS ==================== -->
+    <section class="terminal" id="wordpress">
+        <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span> wp-admin@tudominio:~$ &mdash; plugin.panel</div>
+        <h2>&gt; Conectar en WordPress</h2>
+
+        <h3><span class="step-num">1</span> Instalar y activar</h3>
+        <p><strong>Plugins → Añadir nuevo → Subir plugin</strong> → sube el ZIP de la release → Activar.</p>
+
+        <h3><span class="step-num">2</span> Credenciales</h3>
+        <p><strong>Ajustes → APGallery Google Photos</strong> → pega Client ID y Client Secret → <strong>Guardar credenciales</strong>.</p>
+        <div class="screenshot">
+            <!-- CAPTURA: panel con credenciales -->
+            <img src="capturas/panel-credenciales.png" alt="Panel del plugin con credenciales guardadas">
+            captura_05: panel de ajustes con credenciales
+        </div>
+
+        <h3><span class="step-num">3</span> Conectar la cuenta</h3>
+        <p><strong>Conectar con Google Photos</strong> → inicia sesión con la cuenta (la del test user) → acepta el consentimiento.</p>
+        <p class="dim">// tip: usa ventana de incógnito si tienes varias sesiones de Google abiertas.</p>
+
+        <h3><span class="step-num">4</span> Elegir y sincronizar fotos</h3>
+        <ol>
+            <li>Pulsa <strong>Elegir fotos de Google Photos</strong> → se abre el selector de Google</li>
+            <li>Marca las fotos (puedes navegar por álbumes) → <strong>Hecho</strong></li>
+            <li>Vuelve al panel → <strong>Sincronizar fotos seleccionadas</strong></li>
+            <li>Listo: las fotos quedan en tu biblioteca de medios</li>
+        </ol>
+        <div class="screenshot">
+            <!-- CAPTURA: selector de Google Photos -->
+            <img src="capturas/selector-google.png" alt="Selector oficial de Google Photos con fotos marcadas">
+            captura_06: selector de Google Photos
+        </div>
+        <div class="screenshot">
+            <!-- CAPTURA: resultado de la sincronización -->
+            <img src="capturas/sincronizacion-ok.png" alt="Sincronización completada: N fotos importadas">
+            captura_07: "N fotos importadas a la biblioteca de medios"
+        </div>
+    </section>
+
+    <!-- ==================== USO ==================== -->
+    <section class="terminal" id="uso">
+        <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span> editor@tudominio:~$ &mdash; shortcode.sh</div>
+        <h2>&gt; Uso: el shortcode</h2>
+        <p>Añádelo en cualquier página o entrada:</p>
+        <div class="code-block">[apgallery]
+[apgallery columns="4"]   // grid de 4 columnas (1-6, por defecto 3)</div>
+        <ul>
+            <li><span class="code-inline">columns</span> — columnas del grid (1-6). En móvil pasa automáticamente a 2.</li>
+            <li>Lightbox integrado: clic en la foto para verla en grande, Esc o clic fuera para cerrar.</li>
+            <li>Para añadir más fotos más adelante: repetir "Elegir fotos" → "Sincronizar".</li>
+        </ul>
+    </section>
+
+    <!-- ==================== ERRORES ==================== -->
+    <section class="terminal" id="errores">
+        <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span> apsoft@scripts:~/apgallery &mdash; error.log</div>
+        <h2>&gt; Errores conocidos</h2>
+        <table>
+            <tr><th>Síntoma</th><th>Causa</th><th>Solución</th></tr>
+            <tr>
+                <td><span class="code-inline">Error 400: policy_enforced</span><br>"Protección Avanzada no ha aprobado…"</td>
+                <td>La cuenta está en el Programa de Protección Avanzada, que bloquea apps no verificadas</td>
+                <td>Usa otra cuenta sin Protección Avanzada (compartiéndole las fotos desde la protegida)</td>
+            </tr>
+            <tr>
+                <td><span class="code-inline">redirect_uri_mismatch</span></td>
+                <td>La URI de redirección de Google Cloud no coincide con la del plugin</td>
+                <td>Copia la URL exacta que muestra el panel (https, sin barras finales)</td>
+            </tr>
+            <tr>
+                <td>"Google no concedió el permiso de la Picker API…"</td>
+                <td>La Picker API no está habilitada o el token nació sin scope</td>
+                <td>Habilita la Picker API, revoca la app en <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a> y reconecta</td>
+            </tr>
+            <tr>
+                <td><span class="code-inline">(foto.jpg) Forbidden</span></td>
+                <td>Versiones ≤ 0.6.1 descargaban sin header Authorization</td>
+                <td>Actualiza a ≥ 0.6.2 (v1.0.1 actual)</td>
+            </tr>
+            <tr>
+                <td>"Request had insufficient authentication scopes"</td>
+                <td>Uso de la Library API con scopes retirados por Google (31/03/2025)</td>
+                <td>Este plugin ≥ 0.6.0 ya usa la Picker API; actualiza</td>
+            </tr>
+            <tr>
+                <td>El token deja de funcionar a los ~7 días</td>
+                <td>App en modo Testing: los refresh tokens de test caducan semanalmente</td>
+                <td>Reconecta la cuenta (o publica/verifica la app en Google Cloud para tokens permanentes)</td>
+            </tr>
+            <tr>
+                <td>No aparece la cuenta correcta en la pantalla de Google</td>
+                <td>Sesión de navegador con otra cuenta activa</td>
+                <td>Incógnito o cerrar las demás sesiones de Google</td>
+            </tr>
+        </table>
+    </section>
+
+    <!-- ==================== DESCARGA ==================== -->
+    <section class="terminal" id="descarga">
+        <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span> apsoft@scripts:~/apgallery &mdash; deploy.sh</div>
+        <h2>&gt; Descarga</h2>
+        <p><span class="prompt">root@aps0ft:~$</span> wget apgallery-google-photos-1.0.1.zip <span class="dim"># release estable</span></p>
+        <div style="margin-top:1rem">
+            <a class="btn btn-primary" href="https://github.com/SirAntuans/APGallery-for-Google-Photos/releases/latest" target="_blank" rel="noopener">&gt; Descargar ZIP (release)</a>
+            <a class="btn" href="https://github.com/SirAntuans/APGallery-for-Google-Photos" target="_blank" rel="noopener">&gt; Código fuente</a>
+        </div>
+        <h3>Changelog resumido</h3>
+        <ul>
+            <li><strong>1.0.x</strong> — Versión estable: Picker API completa, documentación y URLs apsoft.xyz</li>
+            <li><strong>0.6.x</strong> — Migración a Picker API + fix de descargas 403</li>
+            <li><strong>0.5.x</strong> — Última era Library API (obsoleta por Google)</li>
+        </ul>
+    </section>
+
+    <footer class="footer">
+        [APS0FT] &copy; <?= $year ?> &mdash; <strong>apsoft.xyz</strong> &middot; APGallery for Google Photos &middot;
+        <a href="https://github.com/SirAntuans/APGallery-for-Google-Photos" target="_blank" rel="noopener" style="color:#006400">github</a>
+    </footer>
+</div>
+<script>
+var canvas = document.getElementById("matrix");
+var ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+var chars = "\u30a2\u30a4\u30a6\u30a8\u30aa\u30ab\u30ad\u30af\u30b1\u30b3\u30b5\u30b7\u30b9\u30bb\u30bd\u30bf\u30c1\u30c4\u30c6\u30c8\u30ca\u30cb\u30cc\u30cd\u30ce\u30cf\u30d2\u30d5\u30d8\u30db\u30de\u30df\u30e0\u30e1\u30e2\u30e4\u30e6\u30e8\u30e9\u30ea\u30eb\u30ec\u30ed\u30ef\u30f2\u30f30123456789<>/{}[]|&^%$#@";
+var fontSize = 14;
+var columns = canvas.width / fontSize;
+var drops = Array(Math.floor(columns)).fill(1);
+function drawMatrix() {
+    ctx.fillStyle = "rgba(10,10,10,0.05)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#00ff41";
+    ctx.font = fontSize + "px monospace";
+    for (var i = 0; i < drops.length; i++) {
+        var text = chars[Math.floor(Math.random() * chars.length)];
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+        drops[i]++;
+    }
+}
+setInterval(drawMatrix, 50);
+window.addEventListener("resize", function () {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+});
+</script>
+</body>
+</html>
