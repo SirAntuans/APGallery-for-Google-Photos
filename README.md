@@ -2,6 +2,8 @@
 
 Plugin de WordPress que integra Google Photos mediante la **Google Photos Picker API** y OAuth 2.0. Conecta tu cuenta de Google, elige qué fotos compartir desde el selector oficial y muéstralas en cualquier página con `[apgallery]`. Grid responsive configurable, lightbox integrado, refresco automático de tokens y sanitización segura según estándares de WordPress.
 
+> **Documentación oficial con capturas:** [scripts.apsoft.xyz/apgallery](https://scripts.apsoft.xyz/apgallery/)
+
 > **Nota importante:** Google eliminó el **31 de marzo de 2025** los scopes de la Library API (`photoslibrary.readonly`, `photoslibrary`, `photoslibrary.sharing`). Por eso este plugin usa la **Picker API**, la única vía oficial actual para acceder a las fotos del usuario.
 
 ## Características
