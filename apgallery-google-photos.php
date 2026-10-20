@@ -1,13 +1,13 @@
 <?php
 /**
  * Plugin Name:       APGallery for Google Photos
- * Plugin URI:        https://apsoft.example.com/apgallery-google-photos
+ * Plugin URI:        https://scripts.apsoft.xyz/apgallery/
  * Description:       Muestra fotos de Google Photos en tu sitio mediante el shortcode [apgallery], usando la Google Photos Picker API (OAuth 2.0).
- * Version:           1.0.0
+ * Version:           1.0.1
  * Requires at least: 6.0
  * Requires PHP:       7.4
  * Author:             APSoft
- * Author URI:        https://apsoft.example.com
+ * Author URI:        https://apsoft.xyz
  * License:            GPL-2.0-or-later
  * License URI:        https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       apgallery-google-photos
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'APGALLERY_VERSION', '1.0.0' );
+define( 'APGALLERY_VERSION', '1.0.1' );
 define( 'APGALLERY_OPT_PREFIX', 'apgallery_' );
 define( 'APGALLERY_PICKER_ENDPOINT', 'https://photospicker.googleapis.com/' );
 define( 'APGALLERY_SCOPE', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly' );

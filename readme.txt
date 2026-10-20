@@ -4,7 +4,7 @@ Tags: gallery, google-photos, oauth, shortcode, lightbox
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -49,6 +49,9 @@ Google eliminó el 31 de marzo de 2025 los scopes de la Library API que permití
 Sí. Al sincronizar, las fotos se importan a la biblioteca de medios de WordPress, así que se sirven desde tu propio sitio y no dependen de URLs de Google que expiran.
 
 == Changelog ==
+
+= 1.0.1 =
+* URLs de referencia del plugin actualizadas a apsoft.xyz (Plugin URI: scripts.apsoft.xyz/apgallery/, Author URI: apsoft.xyz)
 
 = 1.0.0 =
 * Primera versi00f3n estable: flujo completo verificado con la Google Photos Picker API (conectar 2192 seleccionar 2192 sincronizar 2192 galer00eda)
